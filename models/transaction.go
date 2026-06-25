@@ -18,6 +18,15 @@ type TransactionCharge struct {
 	Amount     float64 `json:"amount"`
 }
 
+// PaymentLine adalah satu pembayaran dalam transaksi multi-metode
+// (fitur Gabung Bayar / Split Bill di app POS).
+type PaymentLine struct {
+	PaymentMethod string  `json:"payment_method"` // cash | qris | card | transfer
+	Amount        float64 `json:"amount"`
+	PaymentNote   *string `json:"payment_note"`
+	CreatedAt     string  `json:"created_at"`
+}
+
 type PushTransactionRequest struct {
 	LocalID           string              `json:"local_id"`
 	OutletID          string              `json:"outlet_id"`
@@ -28,9 +37,10 @@ type PushTransactionRequest struct {
 	OtherChargesTotal float64             `json:"other_charges_total"` // tambahan fixed
 	Charges           []TransactionCharge `json:"charges"`             // rincian tiap tambahan
 	TotalAmount       float64             `json:"total_amount"`        // grand total
-	PaymentMethod     string              `json:"payment_method"`
-	CashAmount        float64             `json:"cash_amount"`
+	PaymentMethod     string              `json:"payment_method"`      // bisa "mixed" bila >1 metode
+	CashAmount        float64             `json:"cash_amount"`         // total tunai sebenarnya
 	ChangeAmount      float64             `json:"change_amount"`
+	Payments          []PaymentLine       `json:"payments"` // rincian per metode (Gabung Bayar / Split Bill)
 	CashierName       string              `json:"cashier_name"`
 	Items             []TransactionItem   `json:"items"`
 	Version           int                 `json:"version"`

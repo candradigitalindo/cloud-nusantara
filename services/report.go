@@ -12,6 +12,38 @@ import (
 	"github.com/lib/pq"
 )
 
+// paymentMethodTotals menjumlahkan nominal per metode pembayaran dari
+// transaction_payments untuk rentang tanggal & scope outlet tertentu. Inilah
+// sumber rekap per-metode (bukan kolom payment_method header yang bisa 'mixed').
+func paymentMethodTotals(dateFrom, dateTo string, filterIDs []string) (map[string]float64, error) {
+	q := `SELECT payment_method, COALESCE(SUM(amount), 0)
+		FROM transaction_payments
+		WHERE tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date`
+	args := []interface{}{dateFrom, dateTo}
+	if filterIDs != nil {
+		q += ` AND outlet_id = ANY($3::text[])`
+		args = append(args, pq.Array(filterIDs))
+	}
+	q += ` GROUP BY payment_method`
+
+	rows, err := database.DB.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make(map[string]float64)
+	for rows.Next() {
+		var method string
+		var amt float64
+		if err := rows.Scan(&method, &amt); err != nil {
+			return nil, err
+		}
+		out[method] = amt
+	}
+	return out, rows.Err()
+}
+
 func GetSalesReport(dateFrom, dateTo, outletID string, scopeIDs []string, page, limit int) (*models.SalesReportResponse, error) {
 	report := &models.SalesReportResponse{
 		Page:  page,
@@ -26,15 +58,12 @@ func GetSalesReport(dateFrom, dateTo, outletID string, scopeIDs []string, page, 
 		filterIDs = scopeIDs
 	}
 
+	// Count/total/avg di level transaksi (header).
 	summaryQuery := `
 		SELECT
 			COUNT(*)::int,
 			COALESCE(SUM(total_amount), 0),
-			COALESCE(AVG(total_amount), 0),
-			COALESCE(SUM(CASE WHEN payment_method = 'cash' THEN total_amount ELSE 0 END), 0),
-			COALESCE(SUM(CASE WHEN payment_method = 'qris' THEN total_amount ELSE 0 END), 0),
-			COALESCE(SUM(CASE WHEN payment_method = 'card' THEN total_amount ELSE 0 END), 0),
-			COALESCE(SUM(CASE WHEN payment_method = 'transfer' THEN total_amount ELSE 0 END), 0)
+			COALESCE(AVG(total_amount), 0)
 		FROM cloud_transactions
 		WHERE tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date`
 
@@ -48,13 +77,19 @@ func GetSalesReport(dateFrom, dateTo, outletID string, scopeIDs []string, page, 
 		&report.Summary.TotalTransactions,
 		&report.Summary.TotalRevenue,
 		&report.Summary.AvgPerTransaction,
-		&report.Summary.CashRevenue,
-		&report.Summary.QrisRevenue,
-		&report.Summary.CardRevenue,
-		&report.Summary.TransferRevenue,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("sales report summary query failed: %w", err)
+	}
+
+	// Rincian per metode dari transaction_payments (header bisa bernilai 'mixed').
+	if methodTotals, mErr := paymentMethodTotals(dateFrom, dateTo, filterIDs); mErr != nil {
+		log.Printf("Sales report payment-method query warning: %v", mErr)
+	} else {
+		report.Summary.CashRevenue = methodTotals["cash"]
+		report.Summary.QrisRevenue = methodTotals["qris"]
+		report.Summary.CardRevenue = methodTotals["card"]
+		report.Summary.TransferRevenue = methodTotals["transfer"]
 	}
 
 	unpaidQuery := `
@@ -75,15 +110,12 @@ func GetSalesReport(dateFrom, dateTo, outletID string, scopeIDs []string, page, 
 		log.Printf("Sales report unpaid query warning: %v", err)
 	}
 
+	// Total transaksi & omzet per hari (header).
 	dailyQuery := `
 		SELECT
 			TO_CHAR(tz_date(created_at), 'YYYY-MM-DD') AS date,
 			COUNT(*)::int,
-			COALESCE(SUM(total_amount), 0),
-			COALESCE(SUM(CASE WHEN payment_method = 'cash' THEN total_amount ELSE 0 END), 0),
-			COALESCE(SUM(CASE WHEN payment_method = 'qris' THEN total_amount ELSE 0 END), 0),
-			COALESCE(SUM(CASE WHEN payment_method = 'card' THEN total_amount ELSE 0 END), 0),
-			COALESCE(SUM(CASE WHEN payment_method = 'transfer' THEN total_amount ELSE 0 END), 0)
+			COALESCE(SUM(total_amount), 0)
 		FROM cloud_transactions
 		WHERE tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date`
 
@@ -101,13 +133,50 @@ func GetSalesReport(dateFrom, dateTo, outletID string, scopeIDs []string, page, 
 	defer dailyRows.Close()
 
 	report.Daily = []models.SalesReportRow{}
+	idxByDate := map[string]int{}
 	for dailyRows.Next() {
 		var row models.SalesReportRow
-		if err := dailyRows.Scan(&row.Date, &row.TotalTransactions, &row.TotalRevenue,
-			&row.CashRevenue, &row.QrisRevenue, &row.CardRevenue, &row.TransferRevenue); err != nil {
+		if err := dailyRows.Scan(&row.Date, &row.TotalTransactions, &row.TotalRevenue); err != nil {
 			return nil, fmt.Errorf("sales report daily scan failed: %w", err)
 		}
+		idxByDate[row.Date] = len(report.Daily)
 		report.Daily = append(report.Daily, row)
+	}
+
+	// Rincian per metode per hari dari transaction_payments (header bisa 'mixed').
+	methodDailyQuery := `
+		SELECT TO_CHAR(tz_date(created_at), 'YYYY-MM-DD') AS date, payment_method, COALESCE(SUM(amount), 0)
+		FROM transaction_payments
+		WHERE tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date`
+	if filterIDs != nil {
+		methodDailyQuery += ` AND outlet_id = ANY($3::text[])`
+	}
+	methodDailyQuery += ` GROUP BY tz_date(created_at), payment_method`
+	if mRows, mErr := database.DB.Query(methodDailyQuery, dailyArgs...); mErr != nil {
+		log.Printf("Sales report daily payment-method query warning: %v", mErr)
+	} else {
+		defer mRows.Close()
+		for mRows.Next() {
+			var date, method string
+			var amt float64
+			if err := mRows.Scan(&date, &method, &amt); err != nil {
+				continue
+			}
+			i, ok := idxByDate[date]
+			if !ok {
+				continue
+			}
+			switch method {
+			case "cash":
+				report.Daily[i].CashRevenue = amt
+			case "qris":
+				report.Daily[i].QrisRevenue = amt
+			case "card":
+				report.Daily[i].CardRevenue = amt
+			case "transfer":
+				report.Daily[i].TransferRevenue = amt
+			}
+		}
 	}
 
 	outletQuery := `

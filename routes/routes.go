@@ -9,6 +9,11 @@ import (
 )
 
 func Setup(app *fiber.App, cfg *config.Config) {
+	// App distribution files: force the correct MIME + download disposition so an
+	// APK saves as ".apk" (not ".zip"). Registered before the static handler so it
+	// takes precedence for /uploads/apps/<name>.
+	app.Get("/uploads/apps/:name", handlers.DownloadAppFile)
+
 	// Serve uploaded files
 	app.Static("/uploads", "./uploads")
 
@@ -82,6 +87,11 @@ func Setup(app *fiber.App, cfg *config.Config) {
 	admin.Get("/work-units/:id", middleware.RequirePermission("workunits.view"), handlers.GetWorkUnit)
 	admin.Post("/work-units", middleware.RequirePermission("workunits.create"), handlers.CreateWorkUnit)
 	admin.Put("/work-units/:id", middleware.RequirePermission("workunits.update"), handlers.UpdateWorkUnit)
+
+	// App POS distributables (APK upload + download URL) — Master Data
+	admin.Get("/app-files", middleware.RequirePermission("appfiles.view"), handlers.ListAppFiles)
+	admin.Post("/app-files", middleware.RequirePermission("appfiles.create"), handlers.UploadAppFile)
+	admin.Delete("/app-files/:name", middleware.RequirePermission("appfiles.delete"), handlers.DeleteAppFile)
 	admin.Delete("/work-units/:id", middleware.RequirePermission("workunits.delete"), handlers.DeleteWorkUnit)
 
 	// Dashboard

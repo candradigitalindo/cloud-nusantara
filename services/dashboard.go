@@ -397,11 +397,13 @@ func GetManagerDashboard(scopeIDs []string) (*models.ManagerDashboardStats, erro
 	}
 
 	// ── 5. Payment methods (this month) ────────────────────
+	// Dari transaction_payments agar transaksi multi-metode (header 'mixed')
+	// terpecah benar per metode. outlet_id & created_at didenormalisasi dari transaksi.
 	pmQuery := fmt.Sprintf(`
-		SELECT COALESCE(payment_method, 'other'), COALESCE(SUM(total_amount), 0), COUNT(*)
-		FROM cloud_transactions
+		SELECT COALESCE(payment_method, 'other'), COALESCE(SUM(amount), 0), COUNT(*)
+		FROM transaction_payments
 		WHERE created_at >= date_trunc('month', CURRENT_TIMESTAMP)%s
-		GROUP BY payment_method ORDER BY SUM(total_amount) DESC
+		GROUP BY payment_method ORDER BY SUM(amount) DESC
 	`, outletFilter)
 
 	stats.PaymentMethods = []models.PaymentMethodShare{}

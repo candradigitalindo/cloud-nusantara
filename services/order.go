@@ -133,6 +133,41 @@ func SaveTransaction(outletID string, req models.PushTransactionRequest) (string
 		return "", err
 	}
 
+	// Rincian pembayaran multi-metode (Gabung Bayar / Split Bill). Tulis ulang
+	// (delete + insert) agar re-sync transaksi yang sama tidak menggandakan baris.
+	// created_at memakai tanggal transaksi agar rekap per-metode konsisten dengan
+	// laporan yang berbasis tanggal transaksi.
+	txCreatedAt := parseTime(req.CreatedAt)
+	if _, derr := database.DB.Exec(`DELETE FROM transaction_payments WHERE transaction_id = $1`, cloudID); derr != nil {
+		log.Printf("clear transaction_payments (tx=%s): %v", cloudID, derr)
+	}
+	lines := req.Payments
+	if len(lines) == 0 {
+		// Fallback klien lama tanpa payments[]: satu baris dari metode header + total.
+		method := req.PaymentMethod
+		if method == "" {
+			method = "other"
+		}
+		lines = []models.PaymentLine{{PaymentMethod: method, Amount: req.TotalAmount}}
+	}
+	for _, p := range lines {
+		method := p.PaymentMethod
+		if method == "" {
+			method = "other"
+		}
+		var note interface{}
+		if p.PaymentNote != nil {
+			note = *p.PaymentNote
+		}
+		if _, derr := database.DB.Exec(
+			`INSERT INTO transaction_payments (transaction_id, outlet_id, payment_method, amount, payment_note, created_at)
+			 VALUES ($1, $2, $3, $4, $5, $6)`,
+			cloudID, outletID, method, p.Amount, note, txCreatedAt,
+		); derr != nil {
+			log.Printf("insert transaction_payment (tx=%s method=%s): %v", cloudID, method, derr)
+		}
+	}
+
 	go logSync(outletID, "push_transaction", "transaction", 1, "success", "")
 
 	// Auto-deduct stok bahan baku via resep produk (lenient: gagal dicatat,

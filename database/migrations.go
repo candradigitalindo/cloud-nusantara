@@ -240,7 +240,11 @@ func RunMigrations() error {
 		`ALTER TABLE cloud_categories ADD COLUMN IF NOT EXISTS printer_id VARCHAR(50) DEFAULT NULL`,
 		`ALTER TABLE cloud_products ADD COLUMN IF NOT EXISTS code VARCHAR(50) DEFAULT NULL`,
 		`ALTER TABLE cloud_products ADD COLUMN IF NOT EXISTS description TEXT DEFAULT ''`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_cloud_products_code ON cloud_products(outlet_id, code) WHERE code IS NOT NULL AND code != ''`,
+		// Unique product code per outlet — exclude soft-deleted rows so a deleted
+		// product no longer blocks reusing its code (matches generateProductCode,
+		// which only looks at is_deleted=false). Recreate to add the is_deleted filter.
+		`DROP INDEX IF EXISTS idx_cloud_products_code`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_cloud_products_code ON cloud_products(outlet_id, code) WHERE code IS NOT NULL AND code != '' AND is_deleted = false`,
 	}
 
 	for _, m := range additiveMigrations {
@@ -556,12 +560,41 @@ func RunMigrations() error {
 		`ALTER TABLE cloud_transactions ADD COLUMN IF NOT EXISTS charges JSONB`,
 		// Laporan shift lengkap: jumlah transaksi per metode + kas masuk/keluar
 		`ALTER TABLE cloud_cashier_shifts ADD COLUMN IF NOT EXISTS report JSONB`,
+		// Rincian pembayaran multi-metode (Gabung Bayar / Split Bill). Header
+		// cloud_transactions.payment_method bisa bernilai 'mixed'; rincian nyata
+		// per metode disimpan di sini. outlet_id & created_at didenormalisasi dari
+		// transaksi induk agar rekap per-metode tak perlu JOIN dan tanggalnya = tanggal transaksi.
+		`CREATE TABLE IF NOT EXISTS transaction_payments (
+			id              BIGSERIAL PRIMARY KEY,
+			transaction_id  CHAR(26) NOT NULL,
+			outlet_id       CHAR(26) NOT NULL DEFAULT '',
+			payment_method  VARCHAR(20) NOT NULL,
+			amount          DECIMAL(15,2) NOT NULL DEFAULT 0,
+			payment_note    TEXT,
+			created_at      TIMESTAMP NOT NULL DEFAULT (now() AT TIME ZONE 'UTC')
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_transaction_payments_txid ON transaction_payments(transaction_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_transaction_payments_method ON transaction_payments(payment_method)`,
+		`CREATE INDEX IF NOT EXISTS idx_transaction_payments_outlet ON transaction_payments(outlet_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_transaction_payments_created ON transaction_payments(created_at)`,
 	}
 
 	for _, m := range settingsMigrations {
 		if _, err := DB.Exec(m); err != nil {
 			log.Printf("Settings migration skipped: %v", err)
 		}
+	}
+
+	// Backfill rincian pembayaran untuk transaksi lama (klien lama tanpa payments[]):
+	// satu baris per transaksi dari payment_method + total_amount header. Idempoten —
+	// hanya untuk transaksi yang belum punya baris di transaction_payments. Tanpa ini,
+	// rekap per-metode (yang kini membaca dari transaction_payments) akan kehilangan data historis.
+	if _, err := DB.Exec(`
+		INSERT INTO transaction_payments (transaction_id, outlet_id, payment_method, amount, created_at)
+		SELECT t.id, t.outlet_id, COALESCE(NULLIF(t.payment_method, ''), 'other'), t.total_amount, t.created_at
+		FROM cloud_transactions t
+		WHERE NOT EXISTS (SELECT 1 FROM transaction_payments tp WHERE tp.transaction_id = t.id)`); err != nil {
+		log.Printf("Backfill transaction_payments skipped: %v", err)
 	}
 
 	// Grant settings permissions to all roles that have users.manage or users.update (admin-level roles)
@@ -1052,6 +1085,7 @@ func RunMigrations() error {
 		"dashboard",
 		"outlets.view", "outlets.create", "outlets.update", "outlets.delete",
 		"workunits.view", "workunits.create", "workunits.update", "workunits.delete",
+		"appfiles.view", "appfiles.create", "appfiles.delete",
 		"products.view", "products.create", "products.update", "products.delete",
 		"reports.sales.view", "reports.product_sales.view", "reports.ledger.view",
 		"reports.cashflow.view", "reports.pnl.view", "reports.balance.view",

@@ -23,6 +23,7 @@ var AllPermissions = []string{
 	// Master Data
 	"outlets.view", "outlets.create", "outlets.update", "outlets.delete",
 	"workunits.view", "workunits.create", "workunits.update", "workunits.delete",
+	"appfiles.view", "appfiles.create", "appfiles.delete",
 
 	// Produk
 	"products.view", "products.create", "products.update", "products.delete",

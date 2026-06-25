@@ -38,7 +38,7 @@ func main() {
 
 	app := fiber.New(fiber.Config{
 		AppName:        "Nusantara POS Cloud API v1.0.0",
-		BodyLimit:      10 * 1024 * 1024,
+		BodyLimit:      200 * 1024 * 1024,
 		ServerHeader:   "NusantaraPOS-Cloud",
 		UnescapePath:   true,
 		ErrorHandler: func(c *fiber.Ctx, err error) error {

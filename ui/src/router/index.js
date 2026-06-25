@@ -63,6 +63,7 @@ const Vendors             = () => import('@/pages/Vendors.vue')
 const VendorDetail        = () => import('@/pages/VendorDetail.vue')
 const Admins              = () => import('@/pages/Admins.vue')
 const Roles          = () => import('@/pages/Roles.vue')
+const AppPos         = () => import('@/pages/AppPos.vue')
 const AccessLogs     = () => import('@/pages/AccessLogs.vue')
 const BankAccounts    = () => import('@/pages/BankAccounts.vue')
 const ManagerDashboard = () => import('@/pages/ManagerDashboard.vue')
@@ -189,6 +190,12 @@ const routes = [
         name: 'Roles',
         component: Roles,
         meta: { title: 'Role — Cloud POS', requiresAuth: true, permission: 'roles.view' },
+      },
+      {
+        path: 'app-pos',
+        name: 'AppPos',
+        component: AppPos,
+        meta: { title: 'App POS — Cloud POS', requiresAuth: true, permission: 'appfiles.view' },
       },
       {
         path: 'access-logs',

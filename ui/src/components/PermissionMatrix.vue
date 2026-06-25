@@ -139,6 +139,7 @@ const CATEGORIES = [
       { type: 'crud', module: 'workunits', label: 'Unit Kerja', icon: IC.workunit },
       { type: 'crud', module: 'warehouses', label: 'Gudang', icon: IC.warehouse },
       { type: 'crud', module: 'roles', label: 'Role & Hak Akses', icon: IC.shield },
+      { type: 'crud', module: 'appfiles', label: 'App POS', icon: IC.product, ops: ['view', 'create', 'delete'] },
     ],
   },
   {

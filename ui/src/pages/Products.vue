@@ -253,10 +253,9 @@
                 :options="categoryModalOptions"
                 placeholder="Pilih kategori…"
                 searchPlaceholder="Cari kategori…"
-                :disabled="!formProdOutletId"
                 @change="onCategorySelect"
               />
-              <span v-if="!formProdOutletId" class="form-hint">Pilih outlet terlebih dahulu</span>
+              <span v-if="!formProdOutletId" class="form-hint">Pilih outlet untuk memuat daftar kategori</span>
             </div>
             <div class="form-group">
               <label>Kode Produk</label>
@@ -271,16 +270,6 @@
               <div class="form-group">
                 <label>Harga <span class="req">*</span></label>
                 <input :value="priceDisplay" @input="onPriceInput" class="form-input" type="text" inputmode="numeric" placeholder="Rp 0" required />
-              </div>
-            </div>
-            <div class="form-group">
-              <label>Tujuan Print</label>
-              <div class="select-wrap">
-                <select v-model="formProd.destination" class="form-select">
-                  <option value="">Umum</option>
-                  <option value="kitchen">Dapur (Kitchen)</option>
-                  <option value="bar">Bar</option>
-                </select>
               </div>
             </div>
             <div class="modal-footer">
@@ -403,7 +392,7 @@ function onPriceInput(e) {
 const showProdModal = ref(false)
 const editingProd   = ref(null)
 const savingProd    = ref(false)
-const formProd      = ref({ outlet_id: '', name: '', code: '', description: '', category_id: '', category_name: '', price: 0, destination: '' })
+const formProd      = ref({ outlet_id: '', name: '', code: '', description: '', category_id: '', category_name: '', price: 0 })
 const outletCategories = ref([])  // categories for the selected outlet in modal
 const formProdOutletId = computed(() => editingProd.value ? editingProd.value.outlet_id : formProd.value.outlet_id)
 
@@ -525,14 +514,14 @@ function onCategorySelect() {
 
 function openCreateProd() {
   editingProd.value = null
-  formProd.value = { outlet_id: selectedOutlet.value, name: '', code: '', description: '', category_id: '', category_name: '', price: 0, destination: '' }
+  formProd.value = { outlet_id: selectedOutlet.value, name: '', code: '', description: '', category_id: '', category_name: '', price: 0 }
   priceDisplay.value = ''
   fetchOutletCategories(selectedOutlet.value)
   showProdModal.value = true
 }
 function openEditProd(p) {
   editingProd.value = p
-  formProd.value = { outlet_id: p.outlet_id, name: p.name, code: p.code ?? '', description: p.description ?? '', category_id: p.category_id ?? '', category_name: p.category_name ?? '', price: p.price, destination: p.destination ?? '' }
+  formProd.value = { outlet_id: p.outlet_id, name: p.name, code: p.code ?? '', description: p.description ?? '', category_id: p.category_id ?? '', category_name: p.category_name ?? '', price: p.price }
   priceDisplay.value = p.price ? fmtRupiahInput(p.price) : ''
   fetchOutletCategories(p.outlet_id)
   showProdModal.value = true
@@ -544,7 +533,7 @@ async function saveProd() {
       await productsApi.updateProduct(editingProd.value.id, {
         name: formProd.value.name, code: formProd.value.code, description: formProd.value.description,
         category_id: formProd.value.category_id, category_name: formProd.value.category_name,
-        price: formProd.value.price, destination: formProd.value.destination,
+        price: formProd.value.price,
       })
     } else {
       await productsApi.createProduct({ ...formProd.value })
