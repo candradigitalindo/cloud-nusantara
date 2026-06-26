@@ -29,6 +29,9 @@ var AllPermissions = []string{
 	// Produk
 	"products.view", "products.create", "products.update", "products.delete",
 
+	// Penjualan
+	"reservations.view", "reservations.create", "reservations.update", "reservations.delete",
+
 	// Keuangan — laporan (view-only) + finance
 	"reports.sales.view",
 	"reports.product_sales.view",

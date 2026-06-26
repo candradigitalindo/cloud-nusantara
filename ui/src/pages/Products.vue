@@ -62,7 +62,31 @@
 
     <!-- ── PRODUCTS TABLE ── -->
     <div v-if="tab === 'products'" class="table-panel">
-      <div class="table-scroll">
+      <!-- Mobile cards -->
+      <div class="mobile-cards">
+        <div v-if="loadingProd" class="m-state">Memuat…</div>
+        <div v-else-if="!products.length" class="m-state">{{ search ? 'Produk tidak ditemukan' : 'Belum ada produk' }}</div>
+        <div v-else v-for="p in products" :key="p.id" class="mcard">
+          <div class="mcard-photo">
+            <img v-if="p.photo_url" :src="p.photo_url" :alt="p.name" loading="lazy" />
+            <div v-else class="row-avatar">{{ p.name?.charAt(0)?.toUpperCase() ?? 'P' }}</div>
+          </div>
+          <div class="mcard-body">
+            <p class="row-name">{{ p.name }}</p>
+            <p class="mcard-meta">
+              <span v-if="p.code" class="row-code">{{ p.code }}</span>
+              <span v-if="p.category_name" class="tag-category">{{ p.category_name }}</span>
+            </p>
+            <p class="row-price">{{ formatRupiah(p.price) }}</p>
+            <p v-if="!selectedOutlet" class="row-outlet">{{ p.outlet_name || '—' }}</p>
+          </div>
+          <div class="mcard-acts">
+            <button class="act-edit" @click="openEditProd(p)" title="Edit"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+            <button class="act-del" @click="openDelete(p, 'product')" title="Hapus"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button>
+          </div>
+        </div>
+      </div>
+      <div class="table-scroll desktop-only">
         <table class="otable">
           <thead>
             <tr>
@@ -150,7 +174,24 @@
 
     <!-- ── CATEGORIES TABLE ── -->
     <div v-if="tab === 'categories'" class="table-panel">
-      <div class="table-scroll">
+      <!-- Mobile cards -->
+      <div class="mobile-cards">
+        <div v-if="loadingCat" class="m-state">Memuat…</div>
+        <div v-else-if="!categories.length" class="m-state">{{ search ? 'Kategori tidak ditemukan' : 'Belum ada kategori' }}</div>
+        <div v-else v-for="c in categories" :key="c.id" class="mcard">
+          <div class="mcard-photo"><div class="row-avatar ava-cat">{{ c.name?.charAt(0)?.toUpperCase() ?? 'K' }}</div></div>
+          <div class="mcard-body">
+            <p class="row-name">{{ c.name }}</p>
+            <p class="mcard-meta"><span v-if="c.code_prefix" class="row-code">{{ c.code_prefix }}</span></p>
+            <p v-if="!selectedOutlet" class="row-outlet">{{ c.outlet_name || '—' }}</p>
+          </div>
+          <div class="mcard-acts">
+            <button class="act-edit" @click="openEditCat(c)" title="Edit"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+            <button class="act-del" @click="openDelete(c, 'category')" title="Hapus"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button>
+          </div>
+        </div>
+      </div>
+      <div class="table-scroll desktop-only">
         <table class="otable">
           <thead>
             <tr>
@@ -272,6 +313,21 @@
                 <input :value="priceDisplay" @input="onPriceInput" class="form-input" type="text" inputmode="numeric" placeholder="Rp 0" required />
               </div>
             </div>
+            <div class="form-group">
+              <label>Foto Produk</label>
+              <div class="photo-row">
+                <div class="photo-thumb">
+                  <img v-if="photoPreview || formProd.photo_url" :src="photoPreview || formProd.photo_url" alt="Foto produk" />
+                  <span v-else class="photo-empty">Tidak ada foto</span>
+                </div>
+                <div class="photo-actions">
+                  <input ref="photoInput" type="file" accept="image/*" style="display:none" @change="onPickPhoto" />
+                  <button type="button" class="btn-cancel" @click="photoInput?.click()">{{ (photoPreview || formProd.photo_url) ? 'Ganti Foto' : 'Pilih Foto' }}</button>
+                  <button v-if="photoPreview || formProd.photo_url" type="button" class="btn-photo-del" @click="clearPhoto">Hapus</button>
+                </div>
+              </div>
+              <span class="form-hint">JPG/PNG/WEBP, maks 10MB. Tampil di halaman reservasi publik.</span>
+            </div>
             <div class="modal-footer">
               <button type="button" class="btn-cancel" @click="showProdModal = false">Batal</button>
               <button type="submit" class="btn-save" :disabled="savingProd">
@@ -392,7 +448,11 @@ function onPriceInput(e) {
 const showProdModal = ref(false)
 const editingProd   = ref(null)
 const savingProd    = ref(false)
-const formProd      = ref({ outlet_id: '', name: '', code: '', description: '', category_id: '', category_name: '', price: 0 })
+const formProd      = ref({ outlet_id: '', name: '', code: '', description: '', category_id: '', category_name: '', price: 0, photo_url: '' })
+const photoFile     = ref(null)
+const photoPreview  = ref('')
+const photoRemoved  = ref(false)
+const photoInput    = ref(null)
 const outletCategories = ref([])  // categories for the selected outlet in modal
 const formProdOutletId = computed(() => editingProd.value ? editingProd.value.outlet_id : formProd.value.outlet_id)
 
@@ -512,23 +572,47 @@ function onCategorySelect() {
   formProd.value.code = ''
 }
 
+function resetPhoto() {
+  photoFile.value = null
+  photoPreview.value = ''
+  photoRemoved.value = false
+  if (photoInput.value) photoInput.value.value = ''
+}
+function onPickPhoto(e) {
+  const file = e.target.files?.[0]
+  if (!file) return
+  photoFile.value = file
+  photoPreview.value = URL.createObjectURL(file)
+  photoRemoved.value = false
+}
+function clearPhoto() {
+  photoFile.value = null
+  photoPreview.value = ''
+  formProd.value.photo_url = ''
+  photoRemoved.value = true
+  if (photoInput.value) photoInput.value.value = ''
+}
+
 function openCreateProd() {
   editingProd.value = null
-  formProd.value = { outlet_id: selectedOutlet.value, name: '', code: '', description: '', category_id: '', category_name: '', price: 0 }
+  formProd.value = { outlet_id: selectedOutlet.value, name: '', code: '', description: '', category_id: '', category_name: '', price: 0, photo_url: '' }
   priceDisplay.value = ''
+  resetPhoto()
   fetchOutletCategories(selectedOutlet.value)
   showProdModal.value = true
 }
 function openEditProd(p) {
   editingProd.value = p
-  formProd.value = { outlet_id: p.outlet_id, name: p.name, code: p.code ?? '', description: p.description ?? '', category_id: p.category_id ?? '', category_name: p.category_name ?? '', price: p.price }
+  formProd.value = { outlet_id: p.outlet_id, name: p.name, code: p.code ?? '', description: p.description ?? '', category_id: p.category_id ?? '', category_name: p.category_name ?? '', price: p.price, photo_url: p.photo_url ?? '' }
   priceDisplay.value = p.price ? fmtRupiahInput(p.price) : ''
+  resetPhoto()
   fetchOutletCategories(p.outlet_id)
   showProdModal.value = true
 }
 async function saveProd() {
   savingProd.value = true
   try {
+    let productId = editingProd.value?.id
     if (editingProd.value) {
       await productsApi.updateProduct(editingProd.value.id, {
         name: formProd.value.name, code: formProd.value.code, description: formProd.value.description,
@@ -536,7 +620,14 @@ async function saveProd() {
         price: formProd.value.price,
       })
     } else {
-      await productsApi.createProduct({ ...formProd.value })
+      const created = await productsApi.createProduct({ ...formProd.value })
+      productId = created?.id || created?.data?.id
+    }
+    // Foto: upload bila ada file baru; hapus bila ditandai dihapus.
+    if (productId && photoFile.value) {
+      await productsApi.uploadPhoto(productId, photoFile.value)
+    } else if (productId && photoRemoved.value && editingProd.value) {
+      await productsApi.removePhoto(productId)
     }
     showProdModal.value = false
     await fetchProducts()
@@ -795,6 +886,28 @@ watch(pageCat,  fetchCategories)
 .form-input:focus { border-color: rgba(45,143,86,.4); box-shadow: 0 0 0 3px rgba(45,143,86,.1); }
 .form-input--code { background: rgba(0,0,0,.04); color: #4a6555; font-family: monospace; font-weight: 600; cursor: default; }
 .form-hint { display: block; font-size: .68rem; color: #8ca898; margin-top: .2rem; }
+.photo-row { display: flex; align-items: center; gap: .8rem; }
+.photo-thumb { width: 72px; height: 72px; border-radius: .6rem; overflow: hidden; background: #f1f5f3; border: 1px solid rgba(0,0,0,.08); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.photo-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.photo-empty { font-size: .6rem; color: #9fb3a8; text-align: center; padding: 0 .3rem; }
+.photo-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+.btn-photo-del { padding: .4rem .8rem; border-radius: .55rem; border: none; background: rgba(239,68,68,.1); color: #dc2626; font-size: .78rem; font-weight: 600; cursor: pointer; }
+.btn-photo-del:hover { background: rgba(239,68,68,.18); }
+
+/* ── Mobile cards ── */
+.mobile-cards { display: none; }
+.m-state { padding: 1.5rem; text-align: center; color: #8ca898; font-size: .85rem; }
+@media (max-width: 639px) {
+  .desktop-only { display: none !important; }
+  .mobile-cards { display: flex; flex-direction: column; }
+  .mcard { display: flex; gap: .7rem; padding: .75rem .85rem; border-bottom: 1px solid rgba(0,0,0,.05); align-items: center; }
+  .mcard-photo { width: 46px; height: 46px; border-radius: .55rem; overflow: hidden; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: #f1f5f3; }
+  .mcard-photo img { width: 100%; height: 100%; object-fit: cover; }
+  .mcard-photo .row-avatar { width: 100%; height: 100%; border-radius: 0; }
+  .mcard-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .12rem; }
+  .mcard-meta { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; margin: .1rem 0; }
+  .mcard-acts { display: flex; gap: .35rem; flex-shrink: 0; }
+}
 .form-row { display: flex; gap: .75rem; }
 .form-row .form-group { flex: 1; }
 .select-wrap { position: relative; }

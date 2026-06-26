@@ -49,13 +49,13 @@ func GetOutletsScoped(outletIDs []string) ([]models.Outlet, error) {
 	)
 	if outletIDs != nil {
 		rows, err = database.DB.Query(
-			`SELECT id, code, name, COALESCE(address,''), COALESCE(phone,''), COALESCE(webhook_url,''), is_active, created_at, updated_at
+			`SELECT id, code, COALESCE(slug,''), name, COALESCE(address,''), COALESCE(phone,''), COALESCE(webhook_url,''), is_active, created_at, updated_at
 			FROM outlets WHERE id = ANY($1) ORDER BY created_at DESC`,
 			pq.Array(outletIDs),
 		)
 	} else {
 		rows, err = database.DB.Query(
-			`SELECT id, code, name, COALESCE(address,''), COALESCE(phone,''), COALESCE(webhook_url,''), is_active, created_at, updated_at
+			`SELECT id, code, COALESCE(slug,''), name, COALESCE(address,''), COALESCE(phone,''), COALESCE(webhook_url,''), is_active, created_at, updated_at
 			FROM outlets ORDER BY created_at DESC`,
 		)
 	}
@@ -67,7 +67,7 @@ func GetOutletsScoped(outletIDs []string) ([]models.Outlet, error) {
 	outlets := make([]models.Outlet, 0)
 	for rows.Next() {
 		var o models.Outlet
-		if err := rows.Scan(&o.ID, &o.Code, &o.Name, &o.Address,
+		if err := rows.Scan(&o.ID, &o.Code, &o.Slug, &o.Name, &o.Address,
 			&o.Phone, &o.WebhookURL, &o.IsActive, &o.CreatedAt, &o.UpdatedAt); err != nil {
 			return nil, err
 		}
@@ -124,9 +124,9 @@ func GetMyScopeOutlets(outletIDs []string, wuIDs []string) ([]models.Outlet, err
 func GetOutlet(id string) (*models.Outlet, error) {
 	o := &models.Outlet{}
 	err := database.DB.QueryRow(
-		`SELECT TRIM(id), code, name, COALESCE(address,''), COALESCE(phone,''), COALESCE(api_key,''), COALESCE(webhook_url,''), is_active, created_at, updated_at
+		`SELECT TRIM(id), code, COALESCE(slug,''), name, COALESCE(address,''), COALESCE(phone,''), COALESCE(api_key,''), COALESCE(webhook_url,''), is_active, created_at, updated_at
 		FROM outlets WHERE TRIM(id) = $1`, strings.TrimSpace(id),
-	).Scan(&o.ID, &o.Code, &o.Name, &o.Address,
+	).Scan(&o.ID, &o.Code, &o.Slug, &o.Name, &o.Address,
 		&o.Phone, &o.APIKey, &o.WebhookURL, &o.IsActive, &o.CreatedAt, &o.UpdatedAt)
 	if err != nil {
 		return nil, err

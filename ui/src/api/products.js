@@ -9,6 +9,8 @@ export const productsApi = {
   createProduct:  (data)             => apiClient.post('/admin/products', data),
   updateProduct:  (id, data)         => apiClient.put(`/admin/products/${id}`, data),
   deleteProduct:  (id)               => apiClient.delete(`/admin/products/${id}`),
+  uploadPhoto:    (id, file)         => { const fd = new FormData(); fd.append('file', file); return apiClient.post(`/admin/products/${id}/photo`, fd, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 0 }) },
+  removePhoto:    (id)               => apiClient.delete(`/admin/products/${id}/photo`),
 
   // ── Categories ────────────────────────────────────────────
   listCategories:   (params = {})    => apiClient.get('/admin/categories', { params }),

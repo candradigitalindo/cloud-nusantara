@@ -28,6 +28,7 @@ type CloudProduct struct {
 	CategoryName string    `json:"category_name"`
 	Price        float64   `json:"price"`
 	Destination  string    `json:"destination"`
+	PhotoURL     string    `json:"photo_url"`
 	IsDeleted    bool      `json:"is_deleted"`
 	Version      int       `json:"version"`
 	CreatedAt    time.Time `json:"created_at"`

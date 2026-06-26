@@ -126,7 +126,30 @@
         <div class="px-4 pt-4 pb-2">
           <h3 class="text-sm font-semibold text-gray-700">Detail Transaksi</h3>
         </div>
+
+        <!-- Mobile cards -->
+        <div class="sm:hidden">
+          <div v-if="!report.transactions.length" class="p-6 text-center text-sm text-gray-400">Tidak ada transaksi pada periode ini.</div>
+          <ul v-else class="divide-y divide-gray-100">
+            <li v-for="(t, i) in report.transactions" :key="i" class="p-4">
+              <div class="flex items-start justify-between gap-2">
+                <div class="min-w-0">
+                  <p class="font-medium text-gray-900 break-words">{{ t.orderer_name || t.outlet_name }}</p>
+                  <p class="text-xs text-gray-500">{{ t.outlet_name }} · {{ t.pax > 0 ? t.pax + ' tamu' : '—' }}</p>
+                </div>
+                <p class="font-bold text-gray-900 shrink-0">{{ formatRupiah(t.total_amount) }}</p>
+              </div>
+              <p class="text-xs text-gray-500 mt-1.5 flex flex-wrap gap-x-2 gap-y-0.5">
+                <span class="capitalize">{{ t.payment_method }}</span>
+                <span>· Kasir: {{ t.cashier_name || '—' }}</span>
+                <span>· {{ formatDateTime(t.created_at) }}</span>
+              </p>
+            </li>
+          </ul>
+        </div>
+
         <AppTable
+          class="hidden sm:block"
           :columns="TX_COLUMNS"
           :rows="report.transactions"
           :loading="false"

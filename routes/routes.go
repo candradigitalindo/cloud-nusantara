@@ -23,6 +23,11 @@ func Setup(app *fiber.App, cfg *config.Config) {
 	api.Get("/ping", handlers.Ping)
 	api.Get("/timezone", handlers.GetTimezone) // public — used by frontend for time formatting
 
+	// Public reservation (no auth) — per-outlet by slug
+	public := api.Group("/public")
+	public.Get("/outlets/:slug/menu", handlers.PublicGetMenu)
+	public.Post("/outlets/:slug/reservations", handlers.PublicCreateReservation)
+
 	// Outlet self-discovery: GET /api/v1/outlet/me — returns outlet info from API key alone
 	api.Get("/outlet/me", middleware.AuthOutlet(), func(c *fiber.Ctx) error {
 		return handlers.GetOutletInfo(c)
@@ -193,6 +198,18 @@ func Setup(app *fiber.App, cfg *config.Config) {
 	admin.Get("/assets/:id/maintenances", middleware.RequirePermission("assets.view"), handlers.ListAssetMaintenances)
 	admin.Post("/assets/:id/maintenances", middleware.RequirePermission("assets.update"), handlers.AddAssetMaintenance)
 	admin.Delete("/assets/:id/maintenances/:mid", middleware.RequirePermission("assets.update"), handlers.DeleteAssetMaintenance)
+
+	// Reservasi (Penjualan), scoped per outlet
+	admin.Get("/reservations", middleware.RequirePermission("reservations.view"), handlers.ListReservations)
+	admin.Get("/reservations/:id", middleware.RequirePermission("reservations.view"), handlers.GetReservation)
+	admin.Post("/reservations", middleware.RequirePermission("reservations.create"), handlers.CreateReservation)
+	admin.Put("/reservations/:id", middleware.RequirePermission("reservations.update"), handlers.UpdateReservation)
+	admin.Patch("/reservations/:id/status", middleware.RequirePermission("reservations.update"), handlers.UpdateReservationStatus)
+	admin.Delete("/reservations/:id", middleware.RequirePermission("reservations.delete"), handlers.DeleteReservation)
+
+	// Foto produk
+	admin.Post("/products/:id/photo", middleware.RequirePermission("products.update"), handlers.UploadProductPhoto)
+	admin.Delete("/products/:id/photo", middleware.RequirePermission("products.update"), handlers.DeleteProductPhoto)
 
 	admin.Post("/vendors", middleware.RequirePermission("vendors.create"), handlers.CreateVendor)
 	admin.Put("/vendors/:id", middleware.RequirePermission("vendors.update"), handlers.UpdateVendor)

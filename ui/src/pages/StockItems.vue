@@ -49,7 +49,38 @@
           Aktif saja
         </label>
       </div>
-      <AppTable :columns="COLUMNS" :rows="items" :loading="loading" emptyText="Belum ada bahan baku.">
+      <!-- Mobile cards -->
+      <div class="sm:hidden">
+        <div v-if="loading" class="p-6 text-center text-sm text-gray-400">Memuat…</div>
+        <div v-else-if="!items.length" class="p-6 text-center text-sm text-gray-400">Belum ada bahan baku.</div>
+        <ul v-else class="divide-y divide-gray-100">
+          <li v-for="row in items" :key="row.id" class="p-4">
+            <div class="flex items-start justify-between gap-2">
+              <button @click="openStockDetail(row)" class="min-w-0 text-left">
+                <p class="font-medium text-gray-900 break-words hover:text-emerald-600">{{ row.name }}</p>
+                <p class="mt-0.5 flex flex-wrap items-center gap-1.5">
+                  <span class="font-mono text-[11px] bg-gray-100 px-1.5 py-0.5 rounded">{{ row.code }}</span>
+                  <span v-if="row.category" class="text-xs text-gray-500">{{ row.category }}</span>
+                  <span :class="row.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'" class="text-[11px] font-medium px-1.5 py-0.5 rounded-full">{{ row.is_active ? 'Aktif' : 'Nonaktif' }}</span>
+                </p>
+              </button>
+              <div class="flex items-center gap-0.5 shrink-0">
+                <button @click="openRecipe(row)" title="Resep" class="p-1.5 rounded text-indigo-600 hover:bg-indigo-50"><svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg></button>
+                <button @click="openEdit(row)" title="Edit" class="p-1.5 rounded text-emerald-600 hover:bg-emerald-50"><svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>
+                <button @click="confirmDelete(row)" title="Hapus" class="p-1.5 rounded text-red-500 hover:bg-red-50"><svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>
+              </div>
+            </div>
+            <div class="mt-2 flex items-center gap-4 text-xs">
+              <span class="text-gray-500">Stok gudang:
+                <b v-if="row.in_warehouse" :class="row.warehouse_qty < row.warehouse_min_stock && row.warehouse_min_stock > 0 ? 'text-red-600' : 'text-gray-800'">{{ row.warehouse_qty.toFixed(2) }} {{ row.base_unit }}</b>
+                <span v-else class="text-gray-300 italic">belum ada</span>
+              </span>
+              <span class="text-gray-400">Global: {{ row.total_stock.toFixed(2) }} {{ row.base_unit }}</span>
+            </div>
+          </li>
+        </ul>
+      </div>
+      <AppTable class="hidden sm:block" :columns="COLUMNS" :rows="items" :loading="loading" emptyText="Belum ada bahan baku.">
         <template #cell-code="{ row }">
           <button @click="openStockDetail(row)" class="font-mono text-xs bg-gray-100 px-2 py-0.5 rounded hover:bg-emerald-100 transition-colors">
             {{ row.code }}

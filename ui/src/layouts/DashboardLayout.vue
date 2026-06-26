@@ -347,7 +347,7 @@ const NAV_ITEMS_DATA = [
       { to: '/outlets',    label: 'Outlet',     permission: 'outlets.view' },
       { to: '/work-units', label: 'Unit Kerja', permission: 'workunits.view' },
       { to: '/warehouses', label: 'Gudang',     permission: 'warehouses.view' },
-      { to: '/assets',     label: 'Aset',       permission: 'assets.view' },
+      { to: '/assets',     label: 'Perlengkapan', permission: 'assets.view' },
       { to: '/roles',      label: 'Role',       permission: 'roles.view' },
       { to: '/app-pos',    label: 'App POS',     permission: 'appfiles.view' },
     ],
@@ -360,6 +360,16 @@ const NAV_ITEMS_DATA = [
       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6"
         d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10"/>
     </svg>`,
+  },
+  {
+    label: 'Penjualan',
+    icon: `<svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6"
+        d="M8 7V3m8 4V3M3 11h18M5 5h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2z"/>
+    </svg>`,
+    children: [
+      { to: '/reservations', label: 'Reservasi', permission: 'reservations.view' },
+    ],
   },
   {
     label: 'Keuangan',

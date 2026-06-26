@@ -2,7 +2,84 @@ package database
 
 import (
 	"log"
+	"regexp"
+	"strings"
 )
+
+var slugNonAlnum = regexp.MustCompile(`[^a-z0-9]+`)
+
+func slugify(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	s = slugNonAlnum.ReplaceAllString(s, "-")
+	return strings.Trim(s, "-")
+}
+
+// backfillOutletSlugs assigns a unique slug to every outlet missing one,
+// derived from its name (collisions get -2, -3, … or fall back to the code).
+func backfillOutletSlugs() {
+	rows, err := DB.Query(`SELECT id, name, code FROM outlets WHERE COALESCE(slug,'') = ''`)
+	if err != nil {
+		log.Printf("Backfill outlet slugs skipped: %v", err)
+		return
+	}
+	type o struct{ id, name, code string }
+	var list []o
+	for rows.Next() {
+		var x o
+		if err := rows.Scan(&x.id, &x.name, &x.code); err == nil {
+			list = append(list, x)
+		}
+	}
+	rows.Close()
+
+	taken := map[string]bool{}
+	if r2, err := DB.Query(`SELECT slug FROM outlets WHERE COALESCE(slug,'') <> ''`); err == nil {
+		for r2.Next() {
+			var s string
+			r2.Scan(&s)
+			taken[s] = true
+		}
+		r2.Close()
+	}
+
+	for _, x := range list {
+		base := slugify(x.name)
+		if base == "" {
+			base = slugify(x.code)
+		}
+		if base == "" {
+			base = "outlet"
+		}
+		slug := base
+		for i := 2; taken[slug]; i++ {
+			slug = base + "-" + strings.ToLower(x.code)
+			if taken[slug] {
+				slug = base + "-" + itoa(i)
+			}
+		}
+		taken[slug] = true
+		DB.Exec(`UPDATE outlets SET slug = $1 WHERE id = $2`, slug, x.id)
+	}
+}
+
+func itoa(i int) string {
+	if i == 0 {
+		return "0"
+	}
+	neg := i < 0
+	if neg {
+		i = -i
+	}
+	var b []byte
+	for i > 0 {
+		b = append([]byte{byte('0' + i%10)}, b...)
+		i /= 10
+	}
+	if neg {
+		b = append([]byte{'-'}, b...)
+	}
+	return string(b)
+}
 
 func RunMigrations() error {
 	migrations := []string{
@@ -611,6 +688,33 @@ func RunMigrations() error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_asset_maintenances_asset ON asset_maintenances(asset_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_asset_maintenances_date ON asset_maintenances(maintenance_date)`,
+		// Foto produk (agar calon reservasi bisa melihat menu).
+		`ALTER TABLE cloud_products ADD COLUMN IF NOT EXISTS photo_url VARCHAR(255) DEFAULT ''`,
+		// Slug outlet untuk URL reservasi publik per outlet (/r/:slug).
+		`ALTER TABLE outlets ADD COLUMN IF NOT EXISTS slug VARCHAR(80) DEFAULT ''`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_outlets_slug ON outlets(slug) WHERE slug <> ''`,
+		// Reservasi (penjualan): pax, item dipesan, subtotal, DP, total, sisa, tanggal & jam.
+		`CREATE TABLE IF NOT EXISTS reservations (
+			id               CHAR(26) PRIMARY KEY,
+			outlet_id        CHAR(26) NOT NULL,
+			customer_name    VARCHAR(150) NOT NULL,
+			customer_phone   VARCHAR(40) DEFAULT '',
+			pax              INT DEFAULT 1,
+			items            JSONB DEFAULT '[]',
+			subtotal         DECIMAL(15,2) DEFAULT 0,
+			down_payment     DECIMAL(15,2) DEFAULT 0,
+			total            DECIMAL(15,2) DEFAULT 0,
+			reservation_date DATE,
+			reservation_time VARCHAR(5) DEFAULT '',
+			status           VARCHAR(20) DEFAULT 'pending',
+			notes            TEXT DEFAULT '',
+			source           VARCHAR(20) DEFAULT 'admin',
+			created_at       TIMESTAMP DEFAULT (now() AT TIME ZONE 'UTC'),
+			updated_at       TIMESTAMP DEFAULT (now() AT TIME ZONE 'UTC')
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_reservations_outlet ON reservations(outlet_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_reservations_date ON reservations(reservation_date)`,
+		`CREATE INDEX IF NOT EXISTS idx_reservations_status ON reservations(status)`,
 		// Nama kasir & pemesan (kini dikirim app POS). orderer_name = label "Pemesan"
 		// gabungan seperti di struk; cashier_name sudah ada sebelumnya.
 		`ALTER TABLE cloud_transactions ADD COLUMN IF NOT EXISTS orderer_name VARCHAR(150) DEFAULT ''`,
@@ -635,6 +739,9 @@ func RunMigrations() error {
 		WHERE NOT EXISTS (SELECT 1 FROM transaction_payments tp WHERE tp.transaction_id = t.id)`); err != nil {
 		log.Printf("Backfill transaction_payments skipped: %v", err)
 	}
+
+	// Backfill slug outlet (dari nama, dijamin unik) untuk URL reservasi publik.
+	backfillOutletSlugs()
 
 	// Grant settings permissions to all roles that have users.manage or users.update (admin-level roles)
 	{
@@ -1127,6 +1234,7 @@ func RunMigrations() error {
 		"appfiles.view", "appfiles.create", "appfiles.delete",
 		"assets.view", "assets.create", "assets.update", "assets.delete",
 		"products.view", "products.create", "products.update", "products.delete",
+		"reservations.view", "reservations.create", "reservations.update", "reservations.delete",
 		"reports.sales.view", "reports.product_sales.view", "reports.ledger.view",
 		"reports.cashflow.view", "reports.pnl.view", "reports.balance.view",
 		"reports.tax.view", "reports.void.view",

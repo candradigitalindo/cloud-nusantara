@@ -48,6 +48,8 @@ const ProductsAdmin       = () => import('@/pages/Products.vue')
 const SalesReport         = () => import('@/pages/SalesReport.vue')
 const ProductSalesReport  = () => import('@/pages/ProductSalesReport.vue')
 const Assets              = () => import('@/pages/Assets.vue')
+const Reservations        = () => import('@/pages/Reservations.vue')
+const ReservePublic       = () => import('@/pages/ReservePublic.vue')
 const NotFound            = () => import('@/pages/NotFound.vue')
 const Forbidden           = () => import('@/pages/Forbidden.vue')
 const TaxReport           = () => import('@/pages/TaxReport.vue')
@@ -85,6 +87,14 @@ const AuthLayout     = () => import('@/layouts/AuthLayout.vue')
 
 // ── Route definitions ────────────────────────────────────────
 const routes = [
+  // ── Public reservation page (no auth, no sidebar) ───────
+  {
+    path: '/r/:slug',
+    name: 'ReservePublic',
+    component: ReservePublic,
+    meta: { title: 'Reservasi — Cloud POS' },
+  },
+
   // ── Auth layout (no sidebar) ────────────────────────────
   {
     path: '/login',
@@ -373,7 +383,13 @@ const routes = [
         path: 'assets',
         name: 'Assets',
         component: Assets,
-        meta: { title: 'Manajemen Aset — Cloud POS', requiresAuth: true, permission: 'assets.view' },
+        meta: { title: 'Manajemen Perlengkapan — Cloud POS', requiresAuth: true, permission: 'assets.view' },
+      },
+      {
+        path: 'reservations',
+        name: 'Reservations',
+        component: Reservations,
+        meta: { title: 'Reservasi — Cloud POS', requiresAuth: true, permission: 'reservations.view' },
       },
       {
         path: '403',

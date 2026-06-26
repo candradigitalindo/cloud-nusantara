@@ -5,6 +5,7 @@ import "time"
 type Outlet struct {
 	ID         string    `json:"id"`
 	Code       string    `json:"code"`
+	Slug       string    `json:"slug"`
 	Name       string    `json:"name"`
 	Address    string    `json:"address"`
 	Phone      string    `json:"phone"`

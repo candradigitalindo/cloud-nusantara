@@ -69,7 +69,28 @@
 
     <!-- Table panel -->
     <div class="table-panel">
-      <div class="table-scroll">
+      <!-- Mobile cards -->
+      <div class="mobile-cards">
+        <div v-if="loading" class="m-state">Memuat…</div>
+        <div v-else-if="!filteredOutlets.length" class="m-state">{{ search || statusFilter !== 'all' ? 'Tidak ada outlet yang cocok' : 'Belum ada outlet' }}</div>
+        <div v-else v-for="row in filteredOutlets" :key="row.id" class="mcard">
+          <div :class="['row-avatar', row.is_active ? 'ava--active' : 'ava--inactive']">{{ row.name?.charAt(0)?.toUpperCase() ?? 'O' }}</div>
+          <div class="mcard-body">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="row-name">{{ row.name }}</span>
+              <span class="row-code">{{ row.code }}</span>
+              <span :class="['status-badge', row.is_active ? 'status-active' : 'status-inactive']"><span class="status-dot" />{{ row.is_active ? 'Aktif' : 'Nonaktif' }}</span>
+            </div>
+            <span class="row-muted text-xs">{{ row.address || '—' }}<span v-if="row.phone"> · {{ row.phone }}</span></span>
+          </div>
+          <div class="mcard-acts">
+            <button class="btn-icon btn-icon--detail" title="Detail" @click="openDetail(row)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg></button>
+            <button class="btn-icon btn-icon--edit" title="Edit" @click="openEdit(row)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+            <button class="btn-icon btn-icon--delete" title="Hapus" @click="confirmDelete(row)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button>
+          </div>
+        </div>
+      </div>
+      <div class="table-scroll desktop-only">
         <table class="otable">
           <thead>
             <tr>
@@ -806,6 +827,15 @@ async function doUpdate() {
   box-shadow: 0 2px 16px rgba(0,0,0,.07), 0 1px 0 rgba(255,255,255,.95) inset;
 }
 .table-scroll { overflow-x: auto; }
+.mobile-cards { display: none; }
+.m-state { padding: 1.5rem; text-align: center; color: #8ca898; font-size: .85rem; }
+@media (max-width: 639px) {
+  .desktop-only { display: none !important; }
+  .mobile-cards { display: flex; flex-direction: column; }
+  .mcard { display: flex; gap: .7rem; padding: .8rem .85rem; border-bottom: 1px solid rgba(0,0,0,.05); align-items: center; }
+  .mcard-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .25rem; }
+  .mcard-acts { display: flex; gap: .3rem; flex-shrink: 0; }
+}
 
 .otable { width: 100%; border-collapse: collapse; }
 .otable thead tr {

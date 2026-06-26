@@ -138,7 +138,7 @@ const CATEGORIES = [
       { type: 'crud', module: 'outlets', label: 'Outlet', icon: IC.outlet },
       { type: 'crud', module: 'workunits', label: 'Unit Kerja', icon: IC.workunit },
       { type: 'crud', module: 'warehouses', label: 'Gudang', icon: IC.warehouse },
-      { type: 'crud', module: 'assets', label: 'Aset & Perawatan', icon: IC.warehouse },
+      { type: 'crud', module: 'assets', label: 'Perlengkapan & Perawatan', icon: IC.warehouse },
       { type: 'crud', module: 'roles', label: 'Role & Hak Akses', icon: IC.shield },
       { type: 'crud', module: 'appfiles', label: 'App POS', icon: IC.product, ops: ['view', 'create', 'delete'] },
     ],
@@ -146,6 +146,10 @@ const CATEGORIES = [
   {
     label: 'Produk', icon: IC.product,
     items: [{ type: 'crud', module: 'products', label: 'Produk & Kategori', icon: IC.product }],
+  },
+  {
+    label: 'Penjualan', icon: IC.cart,
+    items: [{ type: 'crud', module: 'reservations', label: 'Reservasi', icon: IC.cart }],
   },
   {
     label: 'Keuangan', icon: IC.finance,

@@ -3,10 +3,10 @@
     <!-- Header -->
     <div class="flex items-start justify-between flex-wrap gap-3">
       <div>
-        <h1 class="text-xl font-bold text-gray-900">Manajemen Aset</h1>
+        <h1 class="text-xl font-bold text-gray-900">Manajemen Perlengkapan</h1>
         <p class="text-sm text-gray-500 mt-0.5">Inventaris barang (meja, kursi, dll) beserta histori perawatannya.</p>
       </div>
-      <AppButton v-if="canCreate" @click="openCreate">+ Tambah Aset</AppButton>
+      <AppButton v-if="canCreate" @click="openCreate">+ Tambah Perlengkapan</AppButton>
     </div>
 
     <AppAlert type="error" :message="errorMsg" />
@@ -28,7 +28,7 @@
       <!-- Mobile cards -->
       <div class="sm:hidden">
         <div v-if="loading" class="p-6 text-center text-sm text-gray-400">Memuat…</div>
-        <div v-else-if="!assets.length" class="p-6 text-center text-sm text-gray-400">Belum ada aset.</div>
+        <div v-else-if="!assets.length" class="p-6 text-center text-sm text-gray-400">Belum ada perlengkapan.</div>
         <ul v-else class="divide-y divide-gray-100">
           <li v-for="a in assets" :key="a.id" class="p-4 space-y-2">
             <div class="flex items-start justify-between gap-2">
@@ -54,7 +54,7 @@
       </div>
 
       <!-- Desktop table -->
-      <AppTable class="hidden sm:block" :columns="COLUMNS" :rows="assets" :loading="loading" emptyText="Belum ada aset. Tambahkan di kanan atas.">
+      <AppTable class="hidden sm:block" :columns="COLUMNS" :rows="assets" :loading="loading" emptyText="Belum ada perlengkapan. Tambahkan di kanan atas.">
         <template #cell-name="{ row }">
           <div>
             <p class="font-medium text-gray-900">{{ row.name }}</p>
@@ -80,14 +80,14 @@
     </AppCard>
 
     <!-- ── Asset Modal ── -->
-    <AppModal v-model="assetModal" :title="editing ? 'Edit Aset' : 'Tambah Aset'">
+    <AppModal v-model="assetModal" :title="editing ? 'Edit Perlengkapan' : 'Tambah Perlengkapan'">
       <form class="space-y-3" @submit.prevent="saveAsset">
         <div v-if="!editing">
           <label class="lbl">Outlet <span class="text-red-500">*</span></label>
           <SearchSelect v-model="form.outlet_id" :options="outlets" placeholder="Pilih outlet…" searchPlaceholder="Cari outlet…" />
         </div>
         <div>
-          <label class="lbl">Nama Aset <span class="text-red-500">*</span></label>
+          <label class="lbl">Nama Perlengkapan <span class="text-red-500">*</span></label>
           <input v-model="form.name" class="form-input" placeholder="Contoh: Meja Kayu Jati" required />
         </div>
         <div class="grid grid-cols-2 gap-3">
@@ -264,7 +264,7 @@ function condCls(c) {
 }
 
 const COLUMNS = [
-  { key: 'name',        label: 'Aset' },
+  { key: 'name',        label: 'Perlengkapan' },
   { key: 'category',    label: 'Kategori' },
   { key: 'outlet_name', label: 'Outlet' },
   { key: 'quantity',    label: 'Jumlah' },
@@ -297,7 +297,7 @@ async function load() {
     })
     assets.value = asArray(data)
   } catch (e) {
-    errorMsg.value = e?.message || 'Gagal memuat aset'
+    errorMsg.value = e?.message || 'Gagal memuat perlengkapan'
   } finally {
     loading.value = false
   }
@@ -327,20 +327,20 @@ function openEdit(a) {
   assetModal.value = true
 }
 async function saveAsset() {
-  if (!form.value.name?.trim()) { toast.error('Nama aset wajib diisi'); return }
+  if (!form.value.name?.trim()) { toast.error('Nama perlengkapan wajib diisi'); return }
   if (!editing.value && !form.value.outlet_id) { toast.error('Pilih outlet'); return }
   saving.value = true
   try {
     if (editing.value) await assetsApi.update(editing.value.id, form.value)
     else await assetsApi.create(form.value)
-    toast.success(editing.value ? 'Aset diperbarui' : 'Aset ditambahkan')
+    toast.success(editing.value ? 'Perlengkapan diperbarui' : 'Perlengkapan ditambahkan')
     assetModal.value = false
     await load()
   } catch (e) { toast.error(e?.message || 'Gagal menyimpan') } finally { saving.value = false }
 }
 async function confirmDelete(a) {
-  if (!window.confirm(`Hapus aset "${a.name}"? Histori perawatannya tetap tersimpan namun aset tak lagi tampil.`)) return
-  try { await assetsApi.remove(a.id); toast.success('Aset dihapus'); await load() }
+  if (!window.confirm(`Hapus perlengkapan "${a.name}"? Histori perawatannya tetap tersimpan namun perlengkapan tak lagi tampil.`)) return
+  try { await assetsApi.remove(a.id); toast.success('Perlengkapan dihapus'); await load() }
   catch (e) { toast.error(e?.message || 'Gagal menghapus') }
 }
 

@@ -116,7 +116,7 @@ func GetAllProducts(outletID, search string, scopeIDs []string, page, limit int)
 		`SELECT cp.id, cp.local_id, cp.outlet_id, COALESCE(o.name,''),
 			cp.name, COALESCE(cp.code,''), COALESCE(cp.description,''),
 			COALESCE(cp.category_id,''), COALESCE(cp.category_name,''),
-			cp.price, COALESCE(cp.destination,''),
+			cp.price, COALESCE(cp.destination,''), COALESCE(cp.photo_url,''),
 			cp.is_deleted, cp.version, cp.created_at, cp.updated_at, cp.synced_at
 		FROM cloud_products cp
 		LEFT JOIN outlets o ON o.id = cp.outlet_id
@@ -133,7 +133,7 @@ func GetAllProducts(outletID, search string, scopeIDs []string, page, limit int)
 	for rows.Next() {
 		var p models.CloudProduct
 		if err := rows.Scan(&p.ID, &p.LocalID, &p.OutletID, &p.OutletName,
-			&p.Name, &p.Code, &p.Description, &p.CategoryID, &p.CategoryName, &p.Price, &p.Destination,
+			&p.Name, &p.Code, &p.Description, &p.CategoryID, &p.CategoryName, &p.Price, &p.Destination, &p.PhotoURL,
 			&p.IsDeleted, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.SyncedAt); err != nil {
 			return nil, 0, err
 		}

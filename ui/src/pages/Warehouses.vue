@@ -21,7 +21,29 @@
           />
         </div>
       </div>
-      <AppTable :columns="COLUMNS" :rows="warehouses" :loading="loading" emptyText="Belum ada gudang.">
+      <!-- Mobile cards -->
+      <div class="sm:hidden">
+        <div v-if="loading" class="p-6 text-center text-sm text-gray-400">Memuat…</div>
+        <div v-else-if="!warehouses.length" class="p-6 text-center text-sm text-gray-400">Belum ada gudang.</div>
+        <ul v-else class="divide-y divide-gray-100">
+          <li v-for="row in warehouses" :key="row.id" class="p-4 flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <p class="font-medium text-gray-900 break-words">{{ row.name }}</p>
+              <p class="mt-1 flex flex-wrap items-center gap-1.5">
+                <span class="font-mono text-xs bg-gray-100 px-2 py-0.5 rounded">{{ row.code }}</span>
+                <span :class="row.type === 'central' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'" class="text-xs font-medium px-2 py-0.5 rounded-full">{{ row.type === 'central' ? 'Gudang Induk' : 'Gudang Outlet' }}</span>
+                <span :class="row.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'" class="text-xs font-medium px-2 py-0.5 rounded-full">{{ row.is_active ? 'Aktif' : 'Nonaktif' }}</span>
+              </p>
+              <p v-if="row.outlet_name" class="text-xs text-gray-500 mt-1">{{ row.outlet_name }}</p>
+            </div>
+            <div class="flex items-center gap-1 shrink-0">
+              <button @click="openEdit(row)" class="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md" title="Edit"><svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Z" /></svg></button>
+              <button @click="confirmDelete(row)" class="p-1.5 text-red-500 hover:bg-red-50 rounded-md" title="Hapus"><svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166M18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79" /></svg></button>
+            </div>
+          </li>
+        </ul>
+      </div>
+      <AppTable class="hidden sm:block" :columns="COLUMNS" :rows="warehouses" :loading="loading" emptyText="Belum ada gudang.">
         <template #cell-code="{ row }">
           <span class="font-mono text-xs bg-gray-100 px-2 py-0.5 rounded">{{ row.code }}</span>
         </template>
