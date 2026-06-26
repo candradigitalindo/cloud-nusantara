@@ -110,12 +110,14 @@ func GetSalesReport(dateFrom, dateTo, outletID string, scopeIDs []string, page, 
 		log.Printf("Sales report unpaid query warning: %v", err)
 	}
 
-	// Total transaksi & omzet per hari (header).
+	// Total transaksi, omzet, & jumlah tamu (pax) per hari. Pax di-resolve dari
+	// order tertaut (cloud_transactions.order_id → cloud_orders.pax).
 	dailyQuery := `
 		SELECT
 			TO_CHAR(tz_date(created_at), 'YYYY-MM-DD') AS date,
 			COUNT(*)::int,
-			COALESCE(SUM(total_amount), 0)
+			COALESCE(SUM(total_amount), 0),
+			COALESCE(SUM(COALESCE((SELECT o2.pax FROM cloud_orders o2 WHERE o2.id = cloud_transactions.order_id LIMIT 1), 0)), 0)::int
 		FROM cloud_transactions
 		WHERE tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date`
 
@@ -136,7 +138,7 @@ func GetSalesReport(dateFrom, dateTo, outletID string, scopeIDs []string, page, 
 	idxByDate := map[string]int{}
 	for dailyRows.Next() {
 		var row models.SalesReportRow
-		if err := dailyRows.Scan(&row.Date, &row.TotalTransactions, &row.TotalRevenue); err != nil {
+		if err := dailyRows.Scan(&row.Date, &row.TotalTransactions, &row.TotalRevenue, &row.TotalPax); err != nil {
 			return nil, fmt.Errorf("sales report daily scan failed: %w", err)
 		}
 		idxByDate[row.Date] = len(report.Daily)
@@ -253,6 +255,7 @@ func GetSalesReport(dateFrom, dateTo, outletID string, scopeIDs []string, page, 
 				 ORDER BY s.created_at DESC LIMIT 1),
 				'') AS cashier_name,
 			COALESCE(t.orderer_name, ''),
+			COALESCE((SELECT o2.pax FROM cloud_orders o2 WHERE o2.id = t.order_id LIMIT 1), 0) AS pax,
 			t.items,
 			TO_CHAR(t.created_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
 		FROM cloud_transactions t
@@ -279,7 +282,7 @@ func GetSalesReport(dateFrom, dateTo, outletID string, scopeIDs []string, page, 
 	for txRows.Next() {
 		var t models.SalesReportTransaction
 		if err := txRows.Scan(&t.ID, &t.OutletName, &t.OutletCode, &t.TotalAmount,
-			&t.PaymentMethod, &t.CashierName, &t.OrdererName, &t.Items, &t.CreatedAt); err != nil {
+			&t.PaymentMethod, &t.CashierName, &t.OrdererName, &t.Pax, &t.Items, &t.CreatedAt); err != nil {
 			return nil, fmt.Errorf("sales report transaction scan failed: %w", err)
 		}
 		transactions = append(transactions, t)

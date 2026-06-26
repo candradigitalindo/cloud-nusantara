@@ -97,6 +97,7 @@
               <tr class="border-b border-gray-200 text-left text-gray-500">
                 <th class="py-2 pr-4 font-medium">Tanggal</th>
                 <th class="py-2 pr-4 font-medium text-right">Transaksi</th>
+                <th class="py-2 pr-4 font-medium text-right">Tamu</th>
                 <th class="py-2 pr-4 font-medium text-right">Cash</th>
                 <th class="py-2 pr-4 font-medium text-right">QRIS</th>
                 <th class="py-2 pr-4 font-medium text-right">Card</th>
@@ -108,6 +109,7 @@
               <tr v-for="d in report.daily" :key="d.date" class="border-b border-gray-100">
                 <td class="py-2 pr-4">{{ formatDateStr(d.date) }}</td>
                 <td class="py-2 pr-4 text-right">{{ d.total_transactions }}</td>
+                <td class="py-2 pr-4 text-right">{{ d.total_pax || 0 }}</td>
                 <td class="py-2 pr-4 text-right">{{ formatRupiah(d.cash_revenue) }}</td>
                 <td class="py-2 pr-4 text-right">{{ formatRupiah(d.qris_revenue) }}</td>
                 <td class="py-2 pr-4 text-right">{{ formatRupiah(d.card_revenue) }}</td>
@@ -132,6 +134,9 @@
         >
           <template #cell-orderer_name="{ row }">
             {{ row.orderer_name || '—' }}
+          </template>
+          <template #cell-pax="{ row }">
+            {{ row.pax > 0 ? row.pax : '—' }}
           </template>
           <template #cell-cashier_name="{ row }">
             {{ row.cashier_name || '—' }}
@@ -181,6 +186,7 @@ const page           = ref(1)
 const TX_COLUMNS = [
   { key: 'outlet_name',    label: 'Outlet' },
   { key: 'orderer_name',   label: 'Pemesan' },
+  { key: 'pax',            label: 'Tamu' },
   { key: 'cashier_name',   label: 'Kasir' },
   { key: 'payment_method', label: 'Metode Bayar' },
   { key: 'total_amount',   label: 'Total' },

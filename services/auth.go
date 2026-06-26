@@ -24,6 +24,7 @@ var AllPermissions = []string{
 	"outlets.view", "outlets.create", "outlets.update", "outlets.delete",
 	"workunits.view", "workunits.create", "workunits.update", "workunits.delete",
 	"appfiles.view", "appfiles.create", "appfiles.delete",
+	"assets.view", "assets.create", "assets.update", "assets.delete",
 
 	// Produk
 	"products.view", "products.create", "products.update", "products.delete",

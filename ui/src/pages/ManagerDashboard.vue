@@ -272,7 +272,7 @@
       </div>
 
       <!-- ═══ Quick Insight Cards ═══ -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div class="insight-card ins-amber">
           <div class="ins-blob" aria-hidden="true" />
           <div class="flex items-center gap-3 mb-2">
@@ -285,6 +285,20 @@
             </div>
           </div>
           <p class="ins-foot">{{ formatRupiah(data.unpaid_amount) }}</p>
+        </div>
+
+        <div class="insight-card ins-emerald">
+          <div class="ins-blob" aria-hidden="true" />
+          <div class="flex items-center gap-3 mb-2">
+            <div class="ins-icon">
+              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            </div>
+            <div>
+              <p class="ins-label">Pesanan Lunas (Bulan Ini)</p>
+              <p class="ins-value">{{ data.month_orders }} transaksi</p>
+            </div>
+          </div>
+          <p class="ins-foot">{{ formatRupiah(data.month_revenue) }}</p>
         </div>
 
         <div class="insight-card ins-blue">
@@ -301,7 +315,7 @@
           <p class="ins-foot-muted">Beroperasi dan terhubung</p>
         </div>
 
-        <div class="insight-card ins-emerald">
+        <div class="insight-card ins-violet">
           <div class="ins-blob" aria-hidden="true" />
           <div class="flex items-center gap-3 mb-2">
             <div class="ins-icon">
@@ -775,7 +789,14 @@ const paymentOpts = computed(() => {
 .ins-emerald .ins-icon { background: rgba(16,185,129,.14); color: #059669; }
 .ins-emerald .ins-label { color: #047857; }
 .ins-emerald .ins-value { color: #065f46; }
+.ins-emerald .ins-foot { color: #047857; }
 .ins-emerald .ins-foot-muted { color: #059669; }
+
+.ins-violet .ins-blob { background: #8b5cf6; }
+.ins-violet .ins-icon { background: rgba(139,92,246,.14); color: #7c3aed; }
+.ins-violet .ins-label { color: #6d28d9; }
+.ins-violet .ins-value { color: #5b21b6; }
+.ins-violet .ins-foot-muted { color: #7c3aed; }
 
 /* ── Mobile tweaks ── */
 @media (max-width: 640px) {

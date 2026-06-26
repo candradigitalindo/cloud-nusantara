@@ -3,6 +3,7 @@ package models
 type SalesReportRow struct {
 	Date              string  `json:"date"`
 	TotalTransactions int     `json:"total_transactions"`
+	TotalPax          int     `json:"total_pax"`
 	TotalRevenue      float64 `json:"total_revenue"`
 	CashRevenue       float64 `json:"cash_revenue"`
 	QrisRevenue       float64 `json:"qris_revenue"`
@@ -50,6 +51,7 @@ type SalesReportTransaction struct {
 	PaymentMethod string  `json:"payment_method"`
 	CashierName   string  `json:"cashier_name"`
 	OrdererName   string  `json:"orderer_name"`
+	Pax           int     `json:"pax"`
 	Items         string  `json:"items"`
 	CreatedAt     string  `json:"created_at"`
 }

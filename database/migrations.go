@@ -577,6 +577,40 @@ func RunMigrations() error {
 		`CREATE INDEX IF NOT EXISTS idx_transaction_payments_method ON transaction_payments(payment_method)`,
 		`CREATE INDEX IF NOT EXISTS idx_transaction_payments_outlet ON transaction_payments(outlet_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_transaction_payments_created ON transaction_payments(created_at)`,
+		// Manajemen aset (meja, kursi, dll) + histori perawatan per barang.
+		`CREATE TABLE IF NOT EXISTS assets (
+			id             CHAR(26) PRIMARY KEY,
+			outlet_id      CHAR(26) NOT NULL,
+			code           VARCHAR(50) DEFAULT '',
+			name           VARCHAR(150) NOT NULL,
+			category       VARCHAR(80) DEFAULT '',
+			quantity       INT DEFAULT 1,
+			unit           VARCHAR(20) DEFAULT 'unit',
+			condition      VARCHAR(20) DEFAULT 'baik',
+			location       VARCHAR(150) DEFAULT '',
+			purchase_date  DATE,
+			purchase_price DECIMAL(15,2) DEFAULT 0,
+			notes          TEXT DEFAULT '',
+			is_deleted     BOOLEAN DEFAULT false,
+			created_at     TIMESTAMP DEFAULT (now() AT TIME ZONE 'UTC'),
+			updated_at     TIMESTAMP DEFAULT (now() AT TIME ZONE 'UTC')
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_assets_outlet ON assets(outlet_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_assets_deleted ON assets(is_deleted)`,
+		`CREATE TABLE IF NOT EXISTS asset_maintenances (
+			id               CHAR(26) PRIMARY KEY,
+			asset_id         CHAR(26) NOT NULL,
+			maintenance_date DATE NOT NULL DEFAULT CURRENT_DATE,
+			type             VARCHAR(30) DEFAULT 'rutin',
+			description      TEXT NOT NULL,
+			cost             DECIMAL(15,2) DEFAULT 0,
+			performed_by     VARCHAR(120) DEFAULT '',
+			condition_after  VARCHAR(20) DEFAULT '',
+			next_due_date    DATE,
+			created_at       TIMESTAMP DEFAULT (now() AT TIME ZONE 'UTC')
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_asset_maintenances_asset ON asset_maintenances(asset_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_asset_maintenances_date ON asset_maintenances(maintenance_date)`,
 		// Nama kasir & pemesan (kini dikirim app POS). orderer_name = label "Pemesan"
 		// gabungan seperti di struk; cashier_name sudah ada sebelumnya.
 		`ALTER TABLE cloud_transactions ADD COLUMN IF NOT EXISTS orderer_name VARCHAR(150) DEFAULT ''`,
@@ -1091,6 +1125,7 @@ func RunMigrations() error {
 		"outlets.view", "outlets.create", "outlets.update", "outlets.delete",
 		"workunits.view", "workunits.create", "workunits.update", "workunits.delete",
 		"appfiles.view", "appfiles.create", "appfiles.delete",
+		"assets.view", "assets.create", "assets.update", "assets.delete",
 		"products.view", "products.create", "products.update", "products.delete",
 		"reports.sales.view", "reports.product_sales.view", "reports.ledger.view",
 		"reports.cashflow.view", "reports.pnl.view", "reports.balance.view",

@@ -47,6 +47,9 @@ const ProcurementDashboard = () => import('@/pages/outlet/ProcurementDashboard.v
 const ProductsAdmin       = () => import('@/pages/Products.vue')
 const SalesReport         = () => import('@/pages/SalesReport.vue')
 const ProductSalesReport  = () => import('@/pages/ProductSalesReport.vue')
+const Assets              = () => import('@/pages/Assets.vue')
+const NotFound            = () => import('@/pages/NotFound.vue')
+const Forbidden           = () => import('@/pages/Forbidden.vue')
 const TaxReport           = () => import('@/pages/TaxReport.vue')
 const CashFlowReport      = () => import('@/pages/CashFlowReport.vue')
 const BalanceReport       = () => import('@/pages/BalanceReport.vue')
@@ -367,6 +370,25 @@ const routes = [
         meta: { title: 'Buku Stok — Cloud POS', requiresAuth: true, permission: 'stockledger.view' },
       },
       {
+        path: 'assets',
+        name: 'Assets',
+        component: Assets,
+        meta: { title: 'Manajemen Aset — Cloud POS', requiresAuth: true, permission: 'assets.view' },
+      },
+      {
+        path: '403',
+        name: 'Forbidden',
+        component: Forbidden,
+        meta: { title: 'Akses Ditolak — Cloud POS', requiresAuth: true },
+      },
+      {
+        // Catch-all 404 di dalam shell (sidebar tetap tampil untuk user login)
+        path: ':pathMatch(.*)*',
+        name: 'NotFound',
+        component: NotFound,
+        meta: { title: 'Tidak Ditemukan — Cloud POS', requiresAuth: true },
+      },
+      {
         path: 'recipes',
         name: 'Recipes',
         component: Recipes,
@@ -375,11 +397,6 @@ const routes = [
     ],
   },
 
-  // ── 404 fallback ─────────────────────────────────────────
-  {
-    path: '/:pathMatch(.*)*',
-    redirect: '/dashboard',
-  },
 ]
 
 // ── Router instance ──────────────────────────────────────────
@@ -416,12 +433,12 @@ router.beforeEach(async (to) => {
 
   // Superadmin-only routes
   if (to.meta.superadmin && auth.isAuthenticated && !auth.isSuperadmin) {
-    return { name: 'Dashboard' }
+    return { name: 'Forbidden' }
   }
 
   // Check permission-based access
   if (to.meta.permission && auth.isAuthenticated && !auth.hasPermission(to.meta.permission)) {
-    return { name: 'Dashboard' }
+    return { name: 'Forbidden' }
   }
 })
 
