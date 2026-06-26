@@ -577,6 +577,11 @@ func RunMigrations() error {
 		`CREATE INDEX IF NOT EXISTS idx_transaction_payments_method ON transaction_payments(payment_method)`,
 		`CREATE INDEX IF NOT EXISTS idx_transaction_payments_outlet ON transaction_payments(outlet_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_transaction_payments_created ON transaction_payments(created_at)`,
+		// Nama kasir & pemesan (kini dikirim app POS). orderer_name = label "Pemesan"
+		// gabungan seperti di struk; cashier_name sudah ada sebelumnya.
+		`ALTER TABLE cloud_transactions ADD COLUMN IF NOT EXISTS orderer_name VARCHAR(150) DEFAULT ''`,
+		`ALTER TABLE cloud_orders ADD COLUMN IF NOT EXISTS orderer_name VARCHAR(150) DEFAULT ''`,
+		`ALTER TABLE cloud_orders ADD COLUMN IF NOT EXISTS created_by VARCHAR(100) DEFAULT ''`,
 	}
 
 	for _, m := range settingsMigrations {

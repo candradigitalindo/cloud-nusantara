@@ -68,6 +68,9 @@
           :loading="false"
           emptyText="Tidak ada pesanan yang belum dibayar."
         >
+          <template #cell-pax="{ row }">
+            {{ row.pax > 0 ? row.pax : '—' }}
+          </template>
           <template #cell-total_amount="{ row }">
             {{ formatRupiah(row.total_amount) }}
           </template>
@@ -96,6 +99,7 @@
       <div v-if="selectedOrder" class="space-y-2">
         <p class="text-sm text-gray-500 mb-3">
           {{ selectedOrder.outlet_name }} — Meja: {{ selectedOrder.table_number || '—' }}
+          — Tamu: {{ selectedOrder.pax > 0 ? selectedOrder.pax : '—' }}
           — {{ selectedOrder.customer_name || 'Tanpa Nama' }}
         </p>
         <table class="min-w-full text-sm">
@@ -156,6 +160,7 @@ const statusOptions = [
 const COLUMNS = [
   { key: 'outlet_name',   label: 'Outlet' },
   { key: 'table_number',  label: 'Meja' },
+  { key: 'pax',           label: 'Tamu' },
   { key: 'customer_name', label: 'Pelanggan' },
   { key: 'total_amount',  label: 'Total' },
   { key: 'status',        label: 'Status' },

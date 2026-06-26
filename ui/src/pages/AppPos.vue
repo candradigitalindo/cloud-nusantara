@@ -24,7 +24,7 @@
       <div v-if="uploading" class="mt-3 h-2 bg-gray-100 rounded-full overflow-hidden">
         <div class="h-full bg-emerald-500 transition-all" :style="{ width: progress + '%' }" />
       </div>
-      <p class="text-xs text-gray-400 mt-2">Maks 200MB. Format: APK, AAB, IPA, ZIP, EXE, DMG. Nama &amp; URL dibuat unik otomatis (tidak menimpa file lama).</p>
+      <p class="text-xs text-gray-400 mt-2">Maks 200MB. Format: APK, AAB, IPA, ZIP, EXE, DMG. Tiap upload diberi versi otomatis (mis. <span class="font-mono">-v1</span>, <span class="font-mono">-v2</span>) — build lama tidak tertimpa.</p>
     </AppCard>
 
     <!-- Files list -->

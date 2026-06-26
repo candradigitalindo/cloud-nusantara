@@ -243,7 +243,16 @@ func GetSalesReport(dateFrom, dateTo, outletID string, scopeIDs []string, page, 
 			t.outlet_code,
 			t.total_amount,
 			t.payment_method,
-			t.cashier_name,
+			-- Nama kasir: app sering mengirim cashier_name kosong, jadi resolve dari
+			-- shift kasir yang menaungi waktu transaksi (opened_by) sebagai fallback.
+			-- Pakai s.created_at (= waktu shift dibuka sebenarnya); opened_at bisa
+			-- ter-overwrite jadi closed_at saat shift ditutup.
+			COALESCE(NULLIF(t.cashier_name, ''),
+				(SELECT NULLIF(s.opened_by, '') FROM cloud_cashier_shifts s
+				 WHERE s.outlet_id = t.outlet_id AND s.created_at <= t.created_at
+				 ORDER BY s.created_at DESC LIMIT 1),
+				'') AS cashier_name,
+			COALESCE(t.orderer_name, ''),
 			t.items,
 			TO_CHAR(t.created_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
 		FROM cloud_transactions t
@@ -270,7 +279,7 @@ func GetSalesReport(dateFrom, dateTo, outletID string, scopeIDs []string, page, 
 	for txRows.Next() {
 		var t models.SalesReportTransaction
 		if err := txRows.Scan(&t.ID, &t.OutletName, &t.OutletCode, &t.TotalAmount,
-			&t.PaymentMethod, &t.CashierName, &t.Items, &t.CreatedAt); err != nil {
+			&t.PaymentMethod, &t.CashierName, &t.OrdererName, &t.Items, &t.CreatedAt); err != nil {
 			return nil, fmt.Errorf("sales report transaction scan failed: %w", err)
 		}
 		transactions = append(transactions, t)
@@ -378,15 +387,33 @@ func GetProductSalesReport(dateFrom, dateTo, outletID string, scopeIDs []string)
 	}
 	whereSQL := "WHERE " + strings.Join(conds, " AND ")
 
+	// Kategori: item order sering mengirim 'category'/'category_name' kosong, jadi
+	// di-resolve dari cloud_products (cocokkan nama produk dalam outlet yang sama)
+	// agar kolom Kategori tidak selalu "Tidak Berkategori".
 	query := fmt.Sprintf(`
-		SELECT
-			COALESCE(NULLIF(item->>'product_name', ''), 'Unknown')       AS product_name,
-			COALESCE(NULLIF(item->>'category_name', ''), COALESCE(NULLIF(item->>'category', ''), 'Tidak Berkategori')) AS category_name,
-			SUM(COALESCE((item->>'qty')::int, 0))                         AS total_qty,
-			SUM(COALESCE((item->>'subtotal')::float8, COALESCE((item->>'price')::float8, 0) * COALESCE((item->>'qty')::int, 0))) AS total_revenue
-		FROM cloud_orders o,
-			jsonb_array_elements(COALESCE(o.items, '[]'::jsonb)) AS item
-		%s
+		SELECT product_name, category_name,
+			SUM(qty) AS total_qty,
+			SUM(revenue) AS total_revenue
+		FROM (
+			SELECT
+				COALESCE(NULLIF(item->>'product_name', ''), 'Unknown') AS product_name,
+				COALESCE(
+					NULLIF(item->>'category_name', ''),
+					NULLIF(item->>'category', ''),
+					(SELECT p.category_name FROM cloud_products p
+					 WHERE p.outlet_id = o.outlet_id
+					   AND p.name = item->>'product_name'
+					   AND COALESCE(p.category_name, '') <> ''
+					   AND COALESCE(p.is_deleted, false) = false
+					 LIMIT 1),
+					'Tidak Berkategori'
+				) AS category_name,
+				COALESCE((item->>'qty')::int, 0) AS qty,
+				COALESCE((item->>'subtotal')::float8, COALESCE((item->>'price')::float8, 0) * COALESCE((item->>'qty')::int, 0)) AS revenue
+			FROM cloud_orders o,
+				jsonb_array_elements(COALESCE(o.items, '[]'::jsonb)) AS item
+			%s
+		) sub
 		GROUP BY product_name, category_name
 		ORDER BY total_revenue DESC`, whereSQL)
 

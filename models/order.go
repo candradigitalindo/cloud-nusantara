@@ -10,6 +10,7 @@ type OrderItem struct {
 	Subtotal    float64 `json:"subtotal"`
 	Destination string  `json:"destination"`
 	Status      string  `json:"status"`
+	WaiterName  string  `json:"waiter_name,omitempty"` // nama pemesan item (sumber pengelompokan struk)
 	// Diskon & komplimen (dikirim dari aplikasi POS Flutter, opsional):
 	Discount        float64 `json:"discount,omitempty"`         // diskon nominal untuk baris ini
 	IsComplimentary bool    `json:"is_complimentary,omitempty"` // true = item gratis/komplimen
@@ -62,6 +63,8 @@ type PushOrderRequest struct {
 	OutletCode   string      `json:"outlet_code"`
 	TableNumber  string      `json:"table_number"`
 	CustomerName string      `json:"customer_name"`
+	OrdererName  string      `json:"orderer_name"` // label "Pemesan" gabungan (seperti struk)
+	CreatedBy    string      `json:"created_by"`   // pembuat order (1 orang)
 	Pax          int         `json:"pax"`
 	TotalAmount  float64     `json:"total_amount"`
 	Status       string      `json:"status"`

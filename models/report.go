@@ -49,6 +49,7 @@ type SalesReportTransaction struct {
 	TotalAmount   float64 `json:"total_amount"`
 	PaymentMethod string  `json:"payment_method"`
 	CashierName   string  `json:"cashier_name"`
+	OrdererName   string  `json:"orderer_name"`
 	Items         string  `json:"items"`
 	CreatedAt     string  `json:"created_at"`
 }

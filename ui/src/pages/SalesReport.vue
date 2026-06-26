@@ -130,6 +130,12 @@
           :loading="false"
           emptyText="Tidak ada transaksi pada periode ini."
         >
+          <template #cell-orderer_name="{ row }">
+            {{ row.orderer_name || '—' }}
+          </template>
+          <template #cell-cashier_name="{ row }">
+            {{ row.cashier_name || '—' }}
+          </template>
           <template #cell-total_amount="{ row }">
             {{ formatRupiah(row.total_amount) }}
           </template>
@@ -174,6 +180,7 @@ const page           = ref(1)
 
 const TX_COLUMNS = [
   { key: 'outlet_name',    label: 'Outlet' },
+  { key: 'orderer_name',   label: 'Pemesan' },
   { key: 'cashier_name',   label: 'Kasir' },
   { key: 'payment_method', label: 'Metode Bayar' },
   { key: 'total_amount',   label: 'Total' },

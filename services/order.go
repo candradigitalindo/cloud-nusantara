@@ -18,13 +18,15 @@ func SaveOrder(outletID string, req models.PushOrderRequest) (string, error) {
 	}
 	err := database.DB.QueryRow(
 		`INSERT INTO cloud_orders (id, local_id, outlet_id, outlet_code, table_number,
-			customer_name, pax, total_amount, status, items, payment_info, version,
+			customer_name, orderer_name, created_by, pax, total_amount, status, items, payment_info, version,
 			created_at, updated_at, synced_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW())
 		ON CONFLICT (outlet_id, local_id) DO UPDATE SET
 			id = EXCLUDED.id,
 			table_number = EXCLUDED.table_number,
 			customer_name = EXCLUDED.customer_name,
+			orderer_name = EXCLUDED.orderer_name,
+			created_by = EXCLUDED.created_by,
 			pax = EXCLUDED.pax,
 			total_amount = EXCLUDED.total_amount,
 			status = EXCLUDED.status,
@@ -34,7 +36,7 @@ func SaveOrder(outletID string, req models.PushOrderRequest) (string, error) {
 			synced_at = NOW()
 		RETURNING id`,
 		cloudID, cloudID, outletID, req.OutletCode, req.TableNumber,
-		req.CustomerName, req.Pax, req.TotalAmount, req.Status,
+		req.CustomerName, req.OrdererName, req.CreatedBy, req.Pax, req.TotalAmount, req.Status,
 		string(itemsJSON), string(paymentJSON), req.Version,
 		parseTime(req.CreatedAt), parseTime(req.UpdatedAt),
 	).Scan(&cloudID)
@@ -102,12 +104,19 @@ func SaveTransaction(outletID string, req models.PushTransactionRequest) (string
 		chargesJSON = string(b)
 	}
 
+	// Nama kasir: app kini mengirimnya terisi; bila kosong pakai created_by
+	// (= kasir menurut kontrak). Fallback lanjutan dari shift dilakukan saat baca.
+	cashierName := req.CashierName
+	if cashierName == "" {
+		cashierName = req.CreatedBy
+	}
+
 	err := database.DB.QueryRow(
 		`INSERT INTO cloud_transactions (id, local_id, outlet_id, outlet_code, order_id,
 			subtotal, total_amount, tax_amount, other_charges_total, charges,
-			payment_method, cash_amount, change_amount, cashier_name,
+			payment_method, cash_amount, change_amount, cashier_name, orderer_name,
 			items, version, created_at, synced_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW())
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NOW())
 		ON CONFLICT (outlet_id, local_id) DO UPDATE SET
 			id = EXCLUDED.id,
 			subtotal = EXCLUDED.subtotal,
@@ -119,13 +128,14 @@ func SaveTransaction(outletID string, req models.PushTransactionRequest) (string
 			cash_amount = EXCLUDED.cash_amount,
 			change_amount = EXCLUDED.change_amount,
 			cashier_name = EXCLUDED.cashier_name,
+			orderer_name = EXCLUDED.orderer_name,
 			items = EXCLUDED.items,
 			version = EXCLUDED.version,
 			synced_at = NOW()
 		RETURNING id`,
 		cloudID, cloudID, outletID, req.OutletCode, req.OrderID,
 		req.Subtotal, req.TotalAmount, req.TaxAmount, req.OtherChargesTotal, chargesJSON,
-		req.PaymentMethod, req.CashAmount, req.ChangeAmount, req.CashierName,
+		req.PaymentMethod, req.CashAmount, req.ChangeAmount, cashierName, req.OrdererName,
 		itemsJSON, req.Version, parseTime(req.CreatedAt),
 	).Scan(&cloudID)
 
@@ -195,11 +205,15 @@ func GetTransactions(outletID string, page, limit int) ([]models.CloudTransactio
 	}
 
 	rows, err := database.DB.Query(
-		`SELECT id, local_id, outlet_id, outlet_code, COALESCE(order_id,''),
-			total_amount, COALESCE(payment_method,''), cash_amount, change_amount,
-			COALESCE(cashier_name,''), COALESCE(items::text,'[]'), version, created_at, synced_at
-		FROM cloud_transactions WHERE outlet_id = $1
-		ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+		`SELECT t.id, t.local_id, t.outlet_id, t.outlet_code, COALESCE(t.order_id,''),
+			t.total_amount, COALESCE(t.payment_method,''), t.cash_amount, t.change_amount,
+			COALESCE(NULLIF(t.cashier_name,''),
+				(SELECT NULLIF(s.opened_by,'') FROM cloud_cashier_shifts s
+				 WHERE s.outlet_id = t.outlet_id AND s.created_at <= t.created_at
+				 ORDER BY s.created_at DESC LIMIT 1), ''),
+			COALESCE(t.items::text,'[]'), t.version, t.created_at, t.synced_at
+		FROM cloud_transactions t WHERE t.outlet_id = $1
+		ORDER BY t.created_at DESC LIMIT $2 OFFSET $3`,
 		outletID, limit, offset,
 	)
 	if err != nil {

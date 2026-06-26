@@ -9,6 +9,7 @@ type TransactionItem struct {
 	Quantity    int     `json:"quantity"`
 	Price       float64 `json:"price"`
 	Subtotal    float64 `json:"subtotal"`
+	WaiterName  string  `json:"waiter_name,omitempty"` // nama pemesan item (sumber pengelompokan struk)
 }
 
 type TransactionCharge struct {
@@ -40,8 +41,10 @@ type PushTransactionRequest struct {
 	PaymentMethod     string              `json:"payment_method"`      // bisa "mixed" bila >1 metode
 	CashAmount        float64             `json:"cash_amount"`         // total tunai sebenarnya
 	ChangeAmount      float64             `json:"change_amount"`
-	Payments          []PaymentLine       `json:"payments"` // rincian per metode (Gabung Bayar / Split Bill)
-	CashierName       string              `json:"cashier_name"`
+	Payments          []PaymentLine       `json:"payments"`      // rincian per metode (Gabung Bayar / Split Bill)
+	CashierName       string              `json:"cashier_name"`  // nama kasir pemroses bayar
+	CreatedBy         string              `json:"created_by"`    // = cashier_name (fallback bila cashier_name kosong)
+	OrdererName       string              `json:"orderer_name"`  // label "Pemesan" gabungan (seperti struk)
 	Items             []TransactionItem   `json:"items"`
 	Version           int                 `json:"version"`
 	CreatedAt         string              `json:"created_at"`

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,6 +21,7 @@ var (
 	appFileNameRe   = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
 	appAllowedExt   = map[string]bool{".apk": true, ".aab": true, ".ipa": true, ".zip": true, ".exe": true, ".dmg": true}
 	maxAppFileBytes = int64(200 * 1024 * 1024) // 200MB
+	versionSuffixRe = regexp.MustCompile(`-v\d+$`) // suffix versi yang sudah ada di nama dasar
 )
 
 func sanitizeAppFileName(name string) string {
@@ -33,21 +35,30 @@ func sanitizeAppFileName(name string) string {
 	return name
 }
 
-// uniqueAppFileName returns a name that doesn't yet exist in dir, appending
-// -1, -2, … before the extension on collision (so a new upload never overwrites
-// an existing file — each gets a unique name and download URL).
-func uniqueAppFileName(dir, name string) string {
-	if _, err := os.Stat(filepath.Join(dir, name)); os.IsNotExist(err) {
-		return name
-	}
+// versionedAppFileName menamai file upload dengan suffix versi increment
+// (`<nama>-v1.apk`, `-v2.apk`, …) sehingga tiap build dapat versi sendiri,
+// tidak menimpa build sebelumnya, dan versinya tampak dari nama file/URL.
+// Versi berikutnya = (versi tertinggi yang sudah ada untuk nama dasar itu) + 1.
+func versionedAppFileName(dir, name string) string {
 	ext := filepath.Ext(name)
 	base := strings.TrimSuffix(name, ext)
-	for i := 1; ; i++ {
-		cand := fmt.Sprintf("%s-%d%s", base, i, ext)
-		if _, err := os.Stat(filepath.Join(dir, cand)); os.IsNotExist(err) {
-			return cand
+	base = versionSuffixRe.ReplaceAllString(base, "") // buang -vN bila nama upload sudah berversi
+	if base == "" {
+		base = "file"
+	}
+
+	maxV := 0
+	re := regexp.MustCompile(`^` + regexp.QuoteMeta(base) + `-v(\d+)` + regexp.QuoteMeta(ext) + `$`)
+	if entries, err := os.ReadDir(dir); err == nil {
+		for _, e := range entries {
+			if m := re.FindStringSubmatch(e.Name()); m != nil {
+				if n, err := strconv.Atoi(m[1]); err == nil && n > maxV {
+					maxV = n
+				}
+			}
 		}
 	}
+	return fmt.Sprintf("%s-v%d%s", base, maxV+1, ext)
 }
 
 type appFileInfo struct {
@@ -102,7 +113,7 @@ func UploadAppFile(c *fiber.Ctx) error {
 		return c.Status(500).JSON(models.APIResponse{Success: false, Error: "Gagal menyiapkan folder."})
 	}
 
-	name := uniqueAppFileName(appFilesDir, sanitizeAppFileName(file.Filename))
+	name := versionedAppFileName(appFilesDir, sanitizeAppFileName(file.Filename))
 	savePath := filepath.Join(appFilesDir, name)
 	if err := c.SaveFile(file, savePath); err != nil {
 		return c.Status(500).JSON(models.APIResponse{Success: false, Error: "Gagal menyimpan file."})
