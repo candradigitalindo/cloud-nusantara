@@ -48,6 +48,7 @@ type PushTransactionRequest struct {
 	Items             []TransactionItem   `json:"items"`
 	Version           int                 `json:"version"`
 	CreatedAt         string              `json:"created_at"`
+	TransactionDate   string              `json:"transaction_date"` // waktu transaksi ASLI (utamakan ini; sync_timestamp hanya metadata)
 }
 
 type CloudTransaction struct {

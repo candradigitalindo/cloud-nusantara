@@ -4,6 +4,9 @@ export const salesApi = {
   getReport: (params) =>
     apiClient.get('/admin/sales-report', { params }),
 
+  getUnpaidOrders: (params) =>
+    apiClient.get('/admin/unpaid-orders', { params }),
+
   getProductSalesReport: (params) =>
     apiClient.get('/admin/product-sales-report', { params }),
 

@@ -85,6 +85,8 @@ func parseTime(s string) interface{} {
 	formats := []string{
 		time.RFC3339,
 		"2006-01-02T15:04:05Z",
+		"2006-01-02T15:04:05", // ISO tanpa zona (mis. transaction_date dari app)
+		"2006-01-02T15:04:05.999999",
 		"2006-01-02 15:04:05",
 		"2006-01-02",
 	}
@@ -96,6 +98,29 @@ func parseTime(s string) interface{} {
 	}
 
 	return time.Now().UTC()
+}
+
+// parseTimeStrict parses s and reports whether it was a valid timestamp.
+// Unlike parseTime, it does NOT fall back to now() — empty/invalid returns ok=false
+// so callers can choose a better fallback (e.g. the linked order's created_at).
+func parseTimeStrict(s string) (time.Time, bool) {
+	if s == "" {
+		return time.Time{}, false
+	}
+	formats := []string{
+		time.RFC3339,
+		"2006-01-02T15:04:05Z",
+		"2006-01-02T15:04:05", // ISO tanpa zona (mis. transaction_date dari app)
+		"2006-01-02T15:04:05.999999",
+		"2006-01-02 15:04:05",
+		"2006-01-02",
+	}
+	for _, f := range formats {
+		if t, err := time.Parse(f, s); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
 }
 
 func nullStr(s string) interface{} {

@@ -6,7 +6,30 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"time"
 )
+
+// resolveTxnCreatedAt memilih created_at terbaik untuk transaksi: created_at dari
+// payload bila valid; jika kosong/tak valid (umum pada transaksi sync tertunda),
+// pakai created_at order tertaut agar tidak ter-stempel waktu sync; fallback ke waktu kini.
+func resolveTxnCreatedAt(outletID string, req models.PushTransactionRequest) interface{} {
+	// Prioritas: transaction_date (waktu transaksi asli, penting utk transaksi offline/tertunda).
+	if t, ok := parseTimeStrict(req.TransactionDate); ok {
+		return t
+	}
+	if t, ok := parseTimeStrict(req.CreatedAt); ok {
+		return t
+	}
+	if req.OrderID != "" {
+		var oc time.Time
+		if err := database.DB.QueryRow(
+			`SELECT created_at FROM cloud_orders WHERE id = $1 AND outlet_id = $2`,
+			req.OrderID, outletID).Scan(&oc); err == nil {
+			return oc
+		}
+	}
+	return parseTime(req.CreatedAt)
+}
 
 func SaveOrder(outletID string, req models.PushOrderRequest) (string, error) {
 	itemsJSON, _ := json.Marshal(req.Items)
@@ -92,6 +115,11 @@ func SaveTransaction(outletID string, req models.PushTransactionRequest) (string
 		cloudID = NewULID()
 	}
 
+	// Waktu transaksi: pakai created_at payload bila valid; bila kosong/tak valid
+	// (umum pada transaksi sync tertunda) pakai created_at order tertaut agar
+	// tidak salah tanggal (ter-stempel waktu sync). Fallback terakhir: waktu sekarang.
+	createdAt := resolveTxnCreatedAt(outletID, req)
+
 	itemsJSON := "[]"
 	if len(req.Items) > 0 {
 		b, _ := json.Marshal(req.Items)
@@ -136,7 +164,7 @@ func SaveTransaction(outletID string, req models.PushTransactionRequest) (string
 		cloudID, cloudID, outletID, req.OutletCode, req.OrderID,
 		req.Subtotal, req.TotalAmount, req.TaxAmount, req.OtherChargesTotal, chargesJSON,
 		req.PaymentMethod, req.CashAmount, req.ChangeAmount, cashierName, req.OrdererName,
-		itemsJSON, req.Version, parseTime(req.CreatedAt),
+		itemsJSON, req.Version, createdAt,
 	).Scan(&cloudID)
 
 	if err != nil {
@@ -147,7 +175,7 @@ func SaveTransaction(outletID string, req models.PushTransactionRequest) (string
 	// (delete + insert) agar re-sync transaksi yang sama tidak menggandakan baris.
 	// created_at memakai tanggal transaksi agar rekap per-metode konsisten dengan
 	// laporan yang berbasis tanggal transaksi.
-	txCreatedAt := parseTime(req.CreatedAt)
+	txCreatedAt := createdAt
 	if _, derr := database.DB.Exec(`DELETE FROM transaction_payments WHERE transaction_id = $1`, cloudID); derr != nil {
 		log.Printf("clear transaction_payments (tx=%s): %v", cloudID, derr)
 	}

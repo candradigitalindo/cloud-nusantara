@@ -380,7 +380,7 @@ const routes = [
         meta: { title: 'Buku Stok — Cloud POS', requiresAuth: true, permission: 'stockledger.view' },
       },
       {
-        path: 'assets',
+        path: 'perlengkapan',
         name: 'Assets',
         component: Assets,
         meta: { title: 'Manajemen Perlengkapan — Cloud POS', requiresAuth: true, permission: 'assets.view' },

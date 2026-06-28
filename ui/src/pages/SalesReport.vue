@@ -55,10 +55,14 @@
         </SummaryCard>
       </div>
 
-      <!-- Unpaid Orders Summary -->
+      <!-- Unpaid Orders Summary (klik → detail) -->
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <SummaryCard label="Pesanan Belum Bayar" :value="report.summary.unpaid_orders ?? 0" icon="receipt" />
-        <SummaryCard label="Nominal Belum Bayar" :value="formatRupiah(report.summary.unpaid_amount ?? 0)" icon="revenue" />
+        <SummaryCard label="Pesanan Belum Bayar" :value="report.summary.unpaid_orders ?? 0" icon="receipt">
+          <button type="button" class="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 px-2.5 py-1 rounded-lg transition" @click="openUnpaid">Lihat Detail →</button>
+        </SummaryCard>
+        <SummaryCard label="Nominal Belum Bayar" :value="formatRupiah(report.summary.unpaid_amount ?? 0)" icon="revenue">
+          <button type="button" class="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 px-2.5 py-1 rounded-lg transition" @click="openUnpaid">Lihat Detail →</button>
+        </SummaryCard>
       </div>
 
       <!-- Per Outlet -->
@@ -179,11 +183,39 @@
         </div>
       </AppCard>
     </template>
+
+    <!-- Unpaid detail modal -->
+    <AppModal v-model="showUnpaid" title="Pesanan Belum Dibayar">
+      <div v-if="unpaidLoading" class="py-8 text-center text-sm text-gray-400">Memuat…</div>
+      <div v-else-if="!unpaidOrders.length" class="py-8 text-center text-sm text-gray-400">Tidak ada pesanan yang belum dibayar.</div>
+      <div v-else class="space-y-3">
+        <p class="text-xs text-gray-500">{{ unpaidOrders.length }} pesanan · total {{ formatRupiah(unpaidTotal) }}</p>
+        <div v-for="o in unpaidOrders" :key="o.id" class="rounded-xl border border-gray-100 overflow-hidden">
+          <div class="flex items-start justify-between gap-2 px-3 py-2 bg-gray-50">
+            <div class="min-w-0">
+              <p class="font-medium text-gray-900 text-sm truncate">{{ o.customer_name || 'Tanpa Nama' }}</p>
+              <p class="text-xs text-gray-500">Meja {{ o.table_number || '—' }} · {{ o.pax > 0 ? o.pax + ' tamu' : '—' }}<span v-if="o.outlet_name"> · {{ o.outlet_name }}</span></p>
+            </div>
+            <div class="text-right shrink-0">
+              <p class="font-bold text-gray-900 text-sm">{{ formatRupiah(o.total_amount) }}</p>
+              <span class="inline-block text-[10px] uppercase font-bold tracking-wide text-amber-600 bg-amber-50 rounded px-1.5 py-0.5 mt-0.5">{{ o.status || 'belum bayar' }}</span>
+            </div>
+          </div>
+          <ul class="px-3 py-1.5">
+            <li v-for="(it, i) in parseItems(o.items)" :key="i" class="flex justify-between gap-2 py-1 text-xs border-b border-gray-50 last:border-0">
+              <span class="text-gray-700 truncate">{{ it.product_name }} <span class="text-gray-400">×{{ it.qty }}</span></span>
+              <span class="text-gray-600 shrink-0">{{ formatRupiah(it.subtotal || (it.price * it.qty)) }}</span>
+            </li>
+            <li v-if="!parseItems(o.items).length" class="py-1 text-xs text-gray-400">Tidak ada rincian item.</li>
+          </ul>
+        </div>
+      </div>
+    </AppModal>
   </div>
 </template>
 
 <script setup>
-import { ref, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { salesApi } from '@/api/sales.js'
 import { outletsApi } from '@/api/outlets.js'
 import { formatRupiah, formatDateTime, formatDateStr, todayDateString } from '@/utils/format.js'
@@ -195,6 +227,7 @@ import AppPagination from '@/components/ui/AppPagination.vue'
 import AppSpinner    from '@/components/ui/AppSpinner.vue'
 import SearchSelect  from '@/components/ui/SearchSelect.vue'
 import SummaryCard   from '@/components/SummaryCard.vue'
+import AppModal      from '@/components/ui/AppModal.vue'
 
 const today = todayDateString()
 const dateFrom       = ref(today)
@@ -205,6 +238,24 @@ const loading        = ref(false)
 const errorMsg       = ref('')
 const report         = ref(null)
 const page           = ref(1)
+
+// Unpaid orders detail modal
+const showUnpaid    = ref(false)
+const unpaidLoading = ref(false)
+const unpaidOrders  = ref([])
+const unpaidTotal   = computed(() => unpaidOrders.value.reduce((s, o) => s + (o.total_amount || 0), 0))
+function parseItems(s) {
+  if (Array.isArray(s)) return s
+  try { const a = JSON.parse(s || '[]'); return Array.isArray(a) ? a : [] } catch { return [] }
+}
+async function openUnpaid() {
+  showUnpaid.value = true
+  unpaidLoading.value = true
+  try {
+    const res = await salesApi.getUnpaidOrders({ outlet_id: selectedOutlet.value || undefined, limit: 200 })
+    unpaidOrders.value = res?.orders ?? res?.data?.orders ?? (Array.isArray(res) ? res : [])
+  } catch { unpaidOrders.value = [] } finally { unpaidLoading.value = false }
+}
 
 const TX_COLUMNS = [
   { key: 'outlet_name',    label: 'Outlet' },

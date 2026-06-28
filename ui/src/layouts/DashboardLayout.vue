@@ -347,7 +347,7 @@ const NAV_ITEMS_DATA = [
       { to: '/outlets',    label: 'Outlet',     permission: 'outlets.view' },
       { to: '/work-units', label: 'Unit Kerja', permission: 'workunits.view' },
       { to: '/warehouses', label: 'Gudang',     permission: 'warehouses.view' },
-      { to: '/assets',     label: 'Perlengkapan', permission: 'assets.view' },
+      { to: '/perlengkapan', label: 'Perlengkapan', permission: 'assets.view' },
       { to: '/roles',      label: 'Role',       permission: 'roles.view' },
       { to: '/app-pos',    label: 'App POS',     permission: 'appfiles.view' },
     ],
