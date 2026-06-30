@@ -5,9 +5,35 @@ import (
 	"cloud-pos/models"
 	"database/sql"
 	"fmt"
+	"time"
 
 	"github.com/lib/pq"
 )
+
+// dashDateExpr mengembalikan ekspresi SQL tanggal yang aman: DATE literal bila valid,
+// jika tidak fallback ke tz_today() (hari ini lokal).
+func dashDateExpr(s string) string {
+	if t, err := time.Parse("2006-01-02", s); err == nil {
+		return "DATE '" + t.Format("2006-01-02") + "'"
+	}
+	return "tz_today()"
+}
+
+// dashPrevRange menghitung ekspresi rentang sebelumnya (periode setara sebelum from..to).
+func dashPrevRange(dateFrom, dateTo string) (string, string) {
+	ft, ferr := time.Parse("2006-01-02", dateFrom)
+	tt, terr := time.Parse("2006-01-02", dateTo)
+	if ferr != nil || terr != nil {
+		return "(tz_today() - 1)", "(tz_today() - 1)"
+	}
+	days := int(tt.Sub(ft).Hours()/24) + 1
+	if days < 1 {
+		days = 1
+	}
+	pf := ft.AddDate(0, 0, -days)
+	pt := tt.AddDate(0, 0, -days)
+	return "DATE '" + pf.Format("2006-01-02") + "'", "DATE '" + pt.Format("2006-01-02") + "'"
+}
 
 func GetDashboardStats(dateFrom, dateTo string, scopeIDs []string) (*models.DashboardStats, error) {
 	stats := &models.DashboardStats{}
@@ -244,8 +270,15 @@ func GetDashboardStats(dateFrom, dateTo string, scopeIDs []string) (*models.Dash
 }
 
 // GetManagerDashboard returns a rich data set for the manager dashboard.
-func GetManagerDashboard(scopeIDs []string) (*models.ManagerDashboardStats, error) {
+func GetManagerDashboard(scopeIDs []string, dateFrom, dateTo string) (*models.ManagerDashboardStats, error) {
 	stats := &models.ManagerDashboardStats{}
+
+	// Rentang tanggal terpilih + rentang sebelumnya (untuk perbandingan).
+	rFrom := dashDateExpr(dateFrom)
+	rTo := dashDateExpr(dateTo)
+	pFrom, pTo := dashPrevRange(dateFrom, dateTo)
+	inRange := fmt.Sprintf("tz_date(t.created_at) BETWEEN %s AND %s", rFrom, rTo)
+	inPrev := fmt.Sprintf("tz_date(t.created_at) BETWEEN %s AND %s", pFrom, pTo)
 
 	// Build scope filter helpers
 	var scopeParam interface{}
@@ -269,37 +302,87 @@ func GetManagerDashboard(scopeIDs []string) (*models.ManagerDashboardStats, erro
 			COALESCE(COUNT(CASE WHEN t.created_at >= date_trunc('month', CURRENT_TIMESTAMP) THEN 1 END), 0),
 			COALESCE(COUNT(CASE WHEN t.created_at >= date_trunc('month', CURRENT_TIMESTAMP) - INTERVAL '1 month' AND t.created_at < date_trunc('month', CURRENT_TIMESTAMP) THEN 1 END), 0),
 			COALESCE(SUM(CASE WHEN t.created_at >= date_trunc('week', CURRENT_TIMESTAMP) THEN t.total_amount ELSE 0 END), 0),
-			COALESCE(SUM(CASE WHEN t.created_at >= date_trunc('week', CURRENT_TIMESTAMP) - INTERVAL '7 days' AND t.created_at < date_trunc('week', CURRENT_TIMESTAMP) THEN t.total_amount ELSE 0 END), 0)
+			COALESCE(SUM(CASE WHEN t.created_at >= date_trunc('week', CURRENT_TIMESTAMP) - INTERVAL '7 days' AND t.created_at < date_trunc('week', CURRENT_TIMESTAMP) THEN t.total_amount ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN %s THEN t.total_amount ELSE 0 END), 0),
+			COALESCE(COUNT(CASE WHEN %s THEN 1 END), 0),
+			COALESCE(SUM(CASE WHEN %s THEN t.total_amount ELSE 0 END), 0),
+			COALESCE(COUNT(CASE WHEN %s THEN 1 END), 0)
 		FROM cloud_transactions t
 		WHERE 1=1%s
-	`, outletFilter)
+	`, inRange, inRange, inPrev, inPrev, outletFilter)
 
+	scanKPI := func(row *sql.Row) error {
+		return row.Scan(
+			&stats.TodayRevenue, &stats.TodayOrders,
+			&stats.YesterdayRevenue, &stats.YesterdayOrders,
+			&stats.MonthRevenue, &stats.MonthRevenuePrev,
+			&stats.MonthOrders, &stats.MonthOrdersPrev,
+			&stats.WeekRevenue, &stats.WeekRevenuePrev,
+			&stats.RangeRevenue, &stats.RangeOrders,
+			&stats.RangeRevenuePrev, &stats.RangeOrdersPrev,
+		)
+	}
+	var kpiErr error
 	if scopeParam != nil {
-		err := database.DB.QueryRow(kpiQuery, scopeParam).Scan(
-			&stats.TodayRevenue, &stats.TodayOrders,
-			&stats.YesterdayRevenue, &stats.YesterdayOrders,
-			&stats.MonthRevenue, &stats.MonthRevenuePrev,
-			&stats.MonthOrders, &stats.MonthOrdersPrev,
-			&stats.WeekRevenue, &stats.WeekRevenuePrev,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("manager dashboard KPI query failed: %w", err)
-		}
+		kpiErr = scanKPI(database.DB.QueryRow(kpiQuery, scopeParam))
 	} else {
-		err := database.DB.QueryRow(kpiQuery).Scan(
-			&stats.TodayRevenue, &stats.TodayOrders,
-			&stats.YesterdayRevenue, &stats.YesterdayOrders,
-			&stats.MonthRevenue, &stats.MonthRevenuePrev,
-			&stats.MonthOrders, &stats.MonthOrdersPrev,
-			&stats.WeekRevenue, &stats.WeekRevenuePrev,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("manager dashboard KPI query failed: %w", err)
-		}
+		kpiErr = scanKPI(database.DB.QueryRow(kpiQuery))
+	}
+	if kpiErr != nil {
+		return nil, fmt.Errorf("manager dashboard KPI query failed: %w", kpiErr)
 	}
 
 	if stats.TodayOrders > 0 {
 		stats.TodayAvgOrder = stats.TodayRevenue / float64(stats.TodayOrders)
+	}
+	if stats.RangeOrders > 0 {
+		stats.RangeAvgOrder = stats.RangeRevenue / float64(stats.RangeOrders)
+	}
+
+	// ── Pax (jumlah tamu) ──────────────────────────────────
+	// pax tersimpan di cloud_orders; dashboard berbasis transaksi (pembayaran).
+	// Dihitung per ORDER (anti dobel saat split bill), memakai tanggal bayar.
+	paxCTE := `WITH paid_orders AS (
+		SELECT o2.outlet_id AS outlet_id, COALESCE(o2.pax,0) AS pax,
+			(SELECT tz_date(MAX(t.created_at)) FROM cloud_transactions t WHERE TRIM(t.order_id)=TRIM(o2.id)) AS pay_date
+		FROM cloud_orders o2
+		WHERE COALESCE(o2.pax,0) > 0
+			AND EXISTS (SELECT 1 FROM cloud_transactions t WHERE TRIM(t.order_id)=TRIM(o2.id))
+	)`
+	paxScope := ""
+	if scopeIDs != nil {
+		paxScope = " WHERE outlet_id = ANY($1)"
+	}
+	paxQuery := paxCTE + fmt.Sprintf(`
+		SELECT COALESCE(SUM(CASE WHEN pay_date BETWEEN %s AND %s THEN pax ELSE 0 END),0),
+		       COALESCE(SUM(CASE WHEN pay_date BETWEEN %s AND %s THEN pax ELSE 0 END),0)
+		FROM paid_orders%s`, rFrom, rTo, pFrom, pTo, paxScope)
+	if scopeParam != nil {
+		database.DB.QueryRow(paxQuery, scopeParam).Scan(&stats.RangePax, &stats.RangePaxPrev)
+	} else {
+		database.DB.QueryRow(paxQuery).Scan(&stats.RangePax, &stats.RangePaxPrev)
+	}
+
+	// Pax per outlet (untuk tabel performa outlet).
+	paxByOutlet := map[string]int{}
+	paxOutletQuery := paxCTE + fmt.Sprintf(`
+		SELECT outlet_id, COALESCE(SUM(CASE WHEN pay_date BETWEEN %s AND %s THEN pax ELSE 0 END),0)
+		FROM paid_orders%s GROUP BY outlet_id`, rFrom, rTo, paxScope)
+	var pobRows *sql.Rows
+	if scopeParam != nil {
+		pobRows, _ = database.DB.Query(paxOutletQuery, scopeParam)
+	} else {
+		pobRows, _ = database.DB.Query(paxOutletQuery)
+	}
+	if pobRows != nil {
+		for pobRows.Next() {
+			var id string
+			var px int
+			if pobRows.Scan(&id, &px) == nil {
+				paxByOutlet[id] = px
+			}
+		}
+		pobRows.Close()
 	}
 
 	// Active outlets, products, unpaid
@@ -320,10 +403,10 @@ func GetManagerDashboard(scopeIDs []string) (*models.ManagerDashboardStats, erro
 	// ── 2. Revenue trend (last 30 days) ────────────────────
 	trendQuery := fmt.Sprintf(`
 		SELECT TO_CHAR(d.dt, 'YYYY-MM-DD'), COALESCE(SUM(t.total_amount), 0)
-		FROM generate_series(tz_today() - 29, tz_today(), '1 day'::interval) d(dt)
+		FROM generate_series(%s, %s, '1 day'::interval) d(dt)
 		LEFT JOIN cloud_transactions t ON tz_date(t.created_at) = d.dt%s
 		GROUP BY d.dt ORDER BY d.dt
-	`, outletFilter)
+	`, rFrom, rTo, outletFilter)
 
 	stats.RevenueTrend = []models.DailyPoint{}
 	var trendRows *sql.Rows
@@ -346,10 +429,10 @@ func GetManagerDashboard(scopeIDs []string) (*models.ManagerDashboardStats, erro
 	// ── 3. Order trend (last 30 days) ──────────────────────
 	orderTrendQuery := fmt.Sprintf(`
 		SELECT TO_CHAR(d.dt, 'YYYY-MM-DD'), COALESCE(COUNT(t.id), 0)
-		FROM generate_series(tz_today() - 29, tz_today(), '1 day'::interval) d(dt)
+		FROM generate_series(%s, %s, '1 day'::interval) d(dt)
 		LEFT JOIN cloud_transactions t ON tz_date(t.created_at) = d.dt%s
 		GROUP BY d.dt ORDER BY d.dt
-	`, outletFilter)
+	`, rFrom, rTo, outletFilter)
 
 	stats.OrderTrend = []models.DailyPoint{}
 	var otRows *sql.Rows
@@ -374,7 +457,7 @@ func GetManagerDashboard(scopeIDs []string) (*models.ManagerDashboardStats, erro
 		SELECT h.hour, COALESCE(SUM(t.total_amount), 0), COALESCE(COUNT(t.id), 0)
 		FROM generate_series(0, 23) h(hour)
 		LEFT JOIN cloud_transactions t ON EXTRACT(HOUR FROM t.created_at AT TIME ZONE COALESCE(current_setting('timezone', true), 'Asia/Jakarta')) = h.hour
-		  AND tz_date(t.created_at) = tz_today()%s
+		  AND `+inRange+`%s
 		GROUP BY h.hour ORDER BY h.hour
 	`, outletFilter)
 
@@ -396,15 +479,18 @@ func GetManagerDashboard(scopeIDs []string) (*models.ManagerDashboardStats, erro
 		}
 	}
 
-	// ── 5. Payment methods (this month) ────────────────────
+	// ── 5. Payment methods (range) ─────────────────────────
 	// Dari transaction_payments agar transaksi multi-metode (header 'mixed')
 	// terpecah benar per metode. outlet_id & created_at didenormalisasi dari transaksi.
+	// Komplimen dikecualikan: nilainya Rp0 (gratis) sehingga hanya muncul sebagai
+	// "compliment 0%" yang mengganggu di kartu Metode Pembayaran.
 	pmQuery := fmt.Sprintf(`
 		SELECT COALESCE(payment_method, 'other'), COALESCE(SUM(amount), 0), COUNT(*)
 		FROM transaction_payments
-		WHERE created_at >= date_trunc('month', CURRENT_TIMESTAMP)%s
+		WHERE tz_date(created_at) BETWEEN %s AND %s%s
+		  AND lower(COALESCE(payment_method,'')) <> 'compliment'
 		GROUP BY payment_method ORDER BY SUM(amount) DESC
-	`, outletFilter)
+	`, rFrom, rTo, outletFilter)
 
 	stats.PaymentMethods = []models.PaymentMethodShare{}
 	var pmRows *sql.Rows
@@ -433,7 +519,7 @@ func GetManagerDashboard(scopeIDs []string) (*models.ManagerDashboardStats, erro
 			COALESCE(SUM((item->>'subtotal')::numeric), 0) AS revenue
 		FROM cloud_transactions t,
 			jsonb_array_elements(t.items) AS item
-		WHERE t.created_at >= date_trunc('month', CURRENT_TIMESTAMP)
+		WHERE `+inRange+`
 		  AND COALESCE(item->>'product_name','') <> ''%s
 		GROUP BY item->>'product_name'
 		ORDER BY qty DESC LIMIT 10
@@ -469,6 +555,8 @@ func GetManagerDashboard(scopeIDs []string) (*models.ManagerDashboardStats, erro
 			COALESCE(SUM(CASE WHEN t.created_at >= date_trunc('month', CURRENT_TIMESTAMP) THEN t.total_amount ELSE 0 END), 0),
 			COALESCE(COUNT(CASE WHEN tz_date(t.created_at) = tz_today() THEN 1 END), 0)::int,
 			COALESCE(COUNT(CASE WHEN t.created_at >= date_trunc('month', CURRENT_TIMESTAMP) THEN 1 END), 0)::int,
+			COALESCE(SUM(CASE WHEN `+inRange+` THEN t.total_amount ELSE 0 END), 0),
+			COALESCE(COUNT(CASE WHEN `+inRange+` THEN 1 END), 0)::int,
 			(SELECT COALESCE(SUM(total_amount),0) FROM cloud_orders co
 				WHERE co.outlet_id = o.id
 				AND COALESCE(co.payment_info->>'payment_status','unpaid') NOT IN ('paid')
@@ -479,7 +567,7 @@ func GetManagerDashboard(scopeIDs []string) (*models.ManagerDashboardStats, erro
 		LEFT JOIN cloud_transactions t ON t.outlet_id = o.id
 		WHERE o.is_active = true%s
 		GROUP BY o.id, o.name
-		ORDER BY SUM(CASE WHEN t.created_at >= date_trunc('month', CURRENT_TIMESTAMP) THEN t.total_amount ELSE 0 END) DESC
+		ORDER BY SUM(CASE WHEN `+inRange+` THEN t.total_amount ELSE 0 END) DESC
 	`, func() string {
 		// Query ini JOIN outlets + cloud_transactions yang dua-duanya punya
 		// kolom `id`, jadi filter scope harus pakai `o.id` (bukan `id` polos)
@@ -489,6 +577,15 @@ func GetManagerDashboard(scopeIDs []string) (*models.ManagerDashboardStats, erro
 		}
 		return ""
 	}())
+
+	// Total pendapatan SELURUH outlet aktif pada rentang (tanpa filter scope).
+	// Dipakai frontend untuk persentase kontribusi terhadap keseluruhan perusahaan.
+	database.DB.QueryRow(
+		`SELECT COALESCE(SUM(t.total_amount),0)
+		 FROM cloud_transactions t
+		 JOIN outlets o ON o.id = t.outlet_id
+		 WHERE o.is_active = true AND `+inRange,
+	).Scan(&stats.GlobalRangeRevenue)
 
 	stats.OutletRanking = []models.OutletRankRow{}
 	var orRows *sql.Rows
@@ -502,7 +599,8 @@ func GetManagerDashboard(scopeIDs []string) (*models.ManagerDashboardStats, erro
 		defer orRows.Close()
 		for orRows.Next() {
 			var r models.OutletRankRow
-			if err := orRows.Scan(&r.ID, &r.Name, &r.TodayRevenue, &r.MonthRevenue, &r.TodayOrders, &r.MonthOrders, &r.UnpaidAmount, &r.LastSyncAt); err == nil {
+			if err := orRows.Scan(&r.ID, &r.Name, &r.TodayRevenue, &r.MonthRevenue, &r.TodayOrders, &r.MonthOrders, &r.RangeRevenue, &r.RangeOrders, &r.UnpaidAmount, &r.LastSyncAt); err == nil {
+				r.RangePax = paxByOutlet[r.ID]
 				stats.OutletRanking = append(stats.OutletRanking, r)
 			}
 		}

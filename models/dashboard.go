@@ -40,6 +40,19 @@ type DashboardStats struct {
 // ── Manager Dashboard ──────────────────────────────────────
 
 type ManagerDashboardStats struct {
+	// Range-based (mengikuti rentang tanggal yang dipilih)
+	RangeRevenue     float64 `json:"range_revenue"`
+	RangeRevenuePrev float64 `json:"range_revenue_prev"`
+	RangeOrders      int     `json:"range_orders"`
+	RangeOrdersPrev  int     `json:"range_orders_prev"`
+	RangeAvgOrder    float64 `json:"range_avg_order"`
+	RangePax         int     `json:"range_pax"`
+	RangePaxPrev     int     `json:"range_pax_prev"`
+
+	// Total pendapatan SELURUH outlet aktif pada rentang (abaikan scope) — agar
+	// manajer outlet tetap tahu kontribusi outletnya terhadap keseluruhan perusahaan.
+	GlobalRangeRevenue float64 `json:"global_range_revenue"`
+
 	// KPI cards
 	TodayRevenue     float64 `json:"today_revenue"`
 	TodayOrders      int     `json:"today_orders"`
@@ -90,12 +103,15 @@ type TopProductRow struct {
 }
 
 type OutletRankRow struct {
-	ID           string  `json:"id"`
-	Name         string  `json:"name"`
-	TodayRevenue float64 `json:"today_revenue"`
-	MonthRevenue float64 `json:"month_revenue"`
-	TodayOrders  int     `json:"today_orders"`
-	MonthOrders  int     `json:"month_orders"`
-	UnpaidAmount float64 `json:"unpaid_amount"`
-	LastSyncAt   *string `json:"last_sync_at"`
+	ID            string  `json:"id"`
+	Name          string  `json:"name"`
+	TodayRevenue  float64 `json:"today_revenue"`
+	MonthRevenue  float64 `json:"month_revenue"`
+	TodayOrders   int     `json:"today_orders"`
+	MonthOrders   int     `json:"month_orders"`
+	RangeRevenue  float64 `json:"range_revenue"`
+	RangeOrders   int     `json:"range_orders"`
+	RangePax      int     `json:"range_pax"`
+	UnpaidAmount  float64 `json:"unpaid_amount"`
+	LastSyncAt    *string `json:"last_sync_at"`
 }

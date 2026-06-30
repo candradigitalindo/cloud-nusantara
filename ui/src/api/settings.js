@@ -9,4 +9,8 @@ export const settingsApi = {
   getPublicTimezone:  ()     => apiClient.get('/timezone'),
   getTax:             ()     => apiClient.get('/admin/settings/tax'),
   updateTax:          (data) => apiClient.put('/admin/settings/tax', data),
+  // Pajak per-outlet
+  listOutletTax:      ()               => apiClient.get('/admin/outlet-taxes'),
+  getOutletTax:       (outletId)       => apiClient.get(`/admin/outlets/${outletId}/tax`),
+  updateOutletTax:    (outletId, data) => apiClient.put(`/admin/outlets/${outletId}/tax`, data),
 }

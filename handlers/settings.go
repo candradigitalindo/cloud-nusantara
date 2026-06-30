@@ -115,3 +115,49 @@ func UpdateTaxSettings(c *fiber.Ctx) error {
 
 	return c.JSON(models.APIResponse{Success: true, Message: "Pengaturan pajak berhasil disimpan"})
 }
+
+// ListOutletTax mengembalikan pengaturan pajak semua outlet (per-outlet, scoped).
+func ListOutletTax(c *fiber.Ctx) error {
+	list, err := services.ListOutletTaxSettings(getOutletScope(c))
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
+			Success: false, Error: "Gagal memuat daftar pajak outlet: " + err.Error(),
+		})
+	}
+	return c.JSON(models.APIResponse{Success: true, Data: list})
+}
+
+// GetOutletTax mengembalikan pengaturan pajak satu outlet (per-outlet).
+func GetOutletTax(c *fiber.Ctx) error {
+	outletID := c.Params("id")
+	if !validateOutletAccess(c, outletID) {
+		return c.Status(fiber.StatusForbidden).JSON(models.APIResponse{Success: false, Error: "Akses outlet tidak diizinkan"})
+	}
+	data, err := services.GetOutletTaxSettings(outletID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(models.APIResponse{
+			Success: false, Error: "Outlet tidak ditemukan",
+		})
+	}
+	return c.JSON(models.APIResponse{Success: true, Data: data})
+}
+
+// UpdateOutletTax menyimpan pengaturan pajak satu outlet (per-outlet).
+func UpdateOutletTax(c *fiber.Ctx) error {
+	outletID := c.Params("id")
+	if !validateOutletAccess(c, outletID) {
+		return c.Status(fiber.StatusForbidden).JSON(models.APIResponse{Success: false, Error: "Akses outlet tidak diizinkan"})
+	}
+	var req models.TaxSettings
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+			Success: false, Error: "Format request tidak valid",
+		})
+	}
+	if err := services.UpdateOutletTaxSettings(outletID, req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+			Success: false, Error: err.Error(),
+		})
+	}
+	return c.JSON(models.APIResponse{Success: true, Message: "Pengaturan pajak outlet berhasil disimpan"})
+}

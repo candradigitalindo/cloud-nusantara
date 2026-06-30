@@ -168,6 +168,7 @@ const CATEGORIES = [
           { key: 'reports.discount.view',      label: 'Diskon & Komplimen' },
         ],
       },
+      { type: 'single', key: 'cashier_shifts.view', label: 'Laporan Shift Kasir', icon: IC.report },
       { type: 'single', key: 'finance.payments.view', label: 'Pembayaran', icon: IC.wallet },
       { type: 'crud', module: 'finance.bank', label: 'Data Rekening', icon: IC.bank },
     ],
@@ -218,6 +219,7 @@ const CATEGORIES = [
       { type: 'toggles', label: 'Identitas Perusahaan', icon: IC.company, toggles: [{ key: 'settings.company.view', label: 'Lihat' }, { key: 'settings.company.update', label: 'Ubah' }] },
       { type: 'toggles', label: 'Zona Waktu', icon: IC.clock, toggles: [{ key: 'settings.timezone.view', label: 'Lihat' }, { key: 'settings.timezone.update', label: 'Ubah' }] },
       { type: 'toggles', label: 'Pajak', icon: IC.tax, toggles: [{ key: 'settings.tax.view', label: 'Lihat' }, { key: 'settings.tax.update', label: 'Ubah' }] },
+      { type: 'single', key: 'devices.view', label: 'Perangkat (Monitoring)', icon: IC.gauge },
     ],
   },
 ]

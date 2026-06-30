@@ -720,6 +720,7 @@ func RunMigrations() error {
 		`ALTER TABLE cloud_transactions ADD COLUMN IF NOT EXISTS orderer_name VARCHAR(150) DEFAULT ''`,
 		`ALTER TABLE cloud_orders ADD COLUMN IF NOT EXISTS orderer_name VARCHAR(150) DEFAULT ''`,
 		`ALTER TABLE cloud_orders ADD COLUMN IF NOT EXISTS created_by VARCHAR(100) DEFAULT ''`,
+		`ALTER TABLE cloud_orders ADD COLUMN IF NOT EXISTS customer_phone VARCHAR(40) DEFAULT ''`,
 	}
 
 	for _, m := range settingsMigrations {
@@ -1237,7 +1238,7 @@ func RunMigrations() error {
 		"reservations.view", "reservations.create", "reservations.update", "reservations.delete",
 		"reports.sales.view", "reports.product_sales.view", "reports.ledger.view",
 		"reports.cashflow.view", "reports.pnl.view", "reports.balance.view",
-		"reports.tax.view", "reports.void.view",
+		"reports.tax.view", "reports.void.view", "reports.discount.view", "cashier_shifts.view",
 		"finance.payments.view", "finance.bank.view", "finance.bank.create", "finance.bank.update", "finance.bank.delete",
 		"procurement.dashboard.view", "procurement.requests.view", "procurement.requests.submit",
 		"procurement.requests.approve", "procurement.requests.purchasing",
@@ -1255,9 +1256,101 @@ func RunMigrations() error {
 		"settings.company.view", "settings.company.update",
 		"settings.timezone.view", "settings.timezone.update",
 		"settings.tax.view", "settings.tax.update",
+		"devices.view",
 	}
 	for _, p := range adminAll {
 		DB.Exec("INSERT INTO role_permissions (role, permission) VALUES ('admin', $1) ON CONFLICT DO NOTHING", p)
+	}
+
+	// ── Heartbeat perangkat (App POS → Cloud) ───────────────────────────────
+	// Snapshot terakhir per outlet (upsert) + histori ringkas untuk tren.
+	deviceMigrations := []string{
+		`CREATE TABLE IF NOT EXISTS device_heartbeats (
+			outlet_id        CHAR(26) PRIMARY KEY,
+			app_version      VARCHAR(50)  NOT NULL DEFAULT '',
+			battery          INT          NOT NULL DEFAULT -1,
+			battery_state    VARCHAR(20)  NOT NULL DEFAULT '',
+			model            VARCHAR(120) NOT NULL DEFAULT '',
+			os               VARCHAR(120) NOT NULL DEFAULT '',
+			storage_total_mb BIGINT       NOT NULL DEFAULT 0,
+			storage_free_mb  BIGINT       NOT NULL DEFAULT 0,
+			network_online   BOOLEAN      NOT NULL DEFAULT false,
+			pending_sync     INT          NOT NULL DEFAULT 0,
+			last_sync_at     TIMESTAMP,
+			printers         JSONB        NOT NULL DEFAULT '[]',
+			reported_at      TIMESTAMP,
+			received_at      TIMESTAMP    NOT NULL DEFAULT (now() AT TIME ZONE 'UTC')
+		)`,
+		`CREATE TABLE IF NOT EXISTS device_heartbeat_logs (
+			id              BIGSERIAL PRIMARY KEY,
+			outlet_id       CHAR(26) NOT NULL,
+			battery         INT      NOT NULL DEFAULT -1,
+			battery_state   VARCHAR(20) NOT NULL DEFAULT '',
+			network_online  BOOLEAN  NOT NULL DEFAULT false,
+			pending_sync    INT      NOT NULL DEFAULT 0,
+			printers_online INT      NOT NULL DEFAULT 0,
+			printers_total  INT      NOT NULL DEFAULT 0,
+			reported_at     TIMESTAMP,
+			received_at     TIMESTAMP NOT NULL DEFAULT (now() AT TIME ZONE 'UTC')
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_device_hb_logs_outlet ON device_heartbeat_logs(outlet_id, received_at DESC)`,
+	}
+	for _, m := range deviceMigrations {
+		if _, err := DB.Exec(m); err != nil {
+			log.Printf("Device heartbeat migration skipped: %v", err)
+		}
+	}
+
+	// ── Pajak per-outlet ────────────────────────────────────────────────────
+	// Tiap outlet punya pengaturan pajaknya sendiri (bukan lagi satu nilai global).
+	outletTaxMigrations := []string{
+		`ALTER TABLE outlets ADD COLUMN IF NOT EXISTS tax_enabled BOOLEAN NOT NULL DEFAULT false`,
+		`ALTER TABLE outlets ADD COLUMN IF NOT EXISTS tax_rate DECIMAL(5,2) NOT NULL DEFAULT 0`,
+		`ALTER TABLE outlets ADD COLUMN IF NOT EXISTS tax_name VARCHAR(100) NOT NULL DEFAULT 'Pajak Restoran (PB1)'`,
+	}
+	for _, m := range outletTaxMigrations {
+		if _, err := DB.Exec(m); err != nil {
+			log.Printf("Outlet tax migration skipped: %v", err)
+		}
+	}
+	// Backfill sekali: salin pajak global lama ke SEMUA outlet agar perilaku tetap
+	// sama di hari pertama; setelah ini nilai global tak lagi dipakai untuk transaksi.
+	{
+		var seeded bool
+		DB.QueryRow(`SELECT EXISTS(SELECT 1 FROM app_settings WHERE key='tax_per_outlet_seeded')`).Scan(&seeded)
+		if !seeded {
+			var gEnabled, gRate, gName string
+			DB.QueryRow(`SELECT COALESCE((SELECT value FROM app_settings WHERE key='tax_enabled'),'false')`).Scan(&gEnabled)
+			DB.QueryRow(`SELECT COALESCE((SELECT value FROM app_settings WHERE key='tax_rate'),'0')`).Scan(&gRate)
+			DB.QueryRow(`SELECT COALESCE(NULLIF((SELECT value FROM app_settings WHERE key='tax_name'),''),'Pajak Restoran (PB1)')`).Scan(&gName)
+			if _, err := DB.Exec(
+				`UPDATE outlets SET tax_enabled = $1, tax_rate = $2::numeric, tax_name = $3`,
+				gEnabled == "true", gRate, gName,
+			); err != nil {
+				log.Printf("Outlet tax backfill skipped: %v", err)
+			} else {
+				DB.Exec(`INSERT INTO app_settings (key, value) VALUES ('tax_per_outlet_seeded','true')
+					ON CONFLICT (key) DO UPDATE SET value = 'true'`)
+				log.Printf("Pajak per-outlet: backfill global → semua outlet selesai")
+			}
+		}
+	}
+
+	// Hak akses monitoring perangkat → superadmin, teknisi, dan semua role manager%.
+	DB.Exec("INSERT INTO role_permissions (role, permission) VALUES ('superadmin', 'devices.view') ON CONFLICT DO NOTHING")
+	DB.Exec("INSERT INTO role_permissions (role, permission) VALUES ('teknisi', 'devices.view') ON CONFLICT DO NOTHING")
+	if mrows, err := DB.Query("SELECT name FROM roles WHERE name = 'manager' OR name LIKE 'manager %'"); err == nil {
+		var managerRoles []string
+		for mrows.Next() {
+			var n string
+			if mrows.Scan(&n) == nil {
+				managerRoles = append(managerRoles, n)
+			}
+		}
+		mrows.Close()
+		for _, r := range managerRoles {
+			DB.Exec("INSERT INTO role_permissions (role, permission) VALUES ($1, 'devices.view') ON CONFLICT DO NOTHING", r)
+		}
 	}
 
 	return nil

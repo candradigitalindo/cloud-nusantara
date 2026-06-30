@@ -12,13 +12,24 @@ import (
 	"github.com/lib/pq"
 )
 
+// txNotVoided mengembalikan kondisi AND yang mengecualikan transaksi yang order-nya
+// sudah di-void (agar tidak terhitung sebagai penjualan). ref = referensi tabel
+// cloud_transactions di query (mis. "cloud_transactions" atau "t").
+func txNotVoided(ref string) string {
+	return ` AND NOT EXISTS (SELECT 1 FROM cloud_orders vo WHERE vo.id = ` + ref +
+		`.order_id AND NULLIF(vo.payment_info->>'voided_at','') IS NOT NULL)`
+}
+
+// payNotVoided mengecualikan baris transaction_payments yang transaksinya ter-void.
+const payNotVoided = ` AND NOT EXISTS (SELECT 1 FROM cloud_transactions vt JOIN cloud_orders vo ON vo.id = vt.order_id WHERE vt.id = transaction_payments.transaction_id AND NULLIF(vo.payment_info->>'voided_at','') IS NOT NULL)`
+
 // paymentMethodTotals menjumlahkan nominal per metode pembayaran dari
 // transaction_payments untuk rentang tanggal & scope outlet tertentu. Inilah
 // sumber rekap per-metode (bukan kolom payment_method header yang bisa 'mixed').
 func paymentMethodTotals(dateFrom, dateTo string, filterIDs []string) (map[string]float64, error) {
 	q := `SELECT payment_method, COALESCE(SUM(amount), 0)
 		FROM transaction_payments
-		WHERE tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date`
+		WHERE tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date` + payNotVoided
 	args := []interface{}{dateFrom, dateTo}
 	if filterIDs != nil {
 		q += ` AND outlet_id = ANY($3::text[])`
@@ -65,7 +76,7 @@ func GetSalesReport(dateFrom, dateTo, outletID string, scopeIDs []string, page, 
 			COALESCE(SUM(total_amount), 0),
 			COALESCE(AVG(total_amount), 0)
 		FROM cloud_transactions
-		WHERE tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date`
+		WHERE tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date` + txNotVoided("cloud_transactions")
 
 	args := []interface{}{dateFrom, dateTo}
 	if filterIDs != nil {
@@ -119,7 +130,7 @@ func GetSalesReport(dateFrom, dateTo, outletID string, scopeIDs []string, page, 
 			COALESCE(SUM(total_amount), 0),
 			COALESCE(SUM(COALESCE((SELECT o2.pax FROM cloud_orders o2 WHERE o2.id = cloud_transactions.order_id LIMIT 1), 0)), 0)::int
 		FROM cloud_transactions
-		WHERE tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date`
+		WHERE tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date` + txNotVoided("cloud_transactions")
 
 	dailyArgs := []interface{}{dateFrom, dateTo}
 	if filterIDs != nil {
@@ -149,7 +160,7 @@ func GetSalesReport(dateFrom, dateTo, outletID string, scopeIDs []string, page, 
 	methodDailyQuery := `
 		SELECT TO_CHAR(tz_date(created_at), 'YYYY-MM-DD') AS date, payment_method, COALESCE(SUM(amount), 0)
 		FROM transaction_payments
-		WHERE tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date`
+		WHERE tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date` + payNotVoided
 	if filterIDs != nil {
 		methodDailyQuery += ` AND outlet_id = ANY($3::text[])`
 	}
@@ -198,7 +209,7 @@ func GetSalesReport(dateFrom, dateTo, outletID string, scopeIDs []string, page, 
 			  AND tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date
 			GROUP BY outlet_id
 		) uq ON uq.outlet_id = t.outlet_id
-		WHERE tz_date(t.created_at) >= $1::date AND tz_date(t.created_at) <= $2::date`
+		WHERE tz_date(t.created_at) >= $1::date AND tz_date(t.created_at) <= $2::date` + txNotVoided("t")
 
 	outletArgs := []interface{}{dateFrom, dateTo}
 	if filterIDs != nil {
@@ -223,7 +234,7 @@ func GetSalesReport(dateFrom, dateTo, outletID string, scopeIDs []string, page, 
 	}
 
 	countQuery := `SELECT COUNT(*) FROM cloud_transactions
-		WHERE tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date`
+		WHERE tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date` + txNotVoided("cloud_transactions")
 	countArgs := []interface{}{dateFrom, dateTo}
 	if filterIDs != nil {
 		countQuery += ` AND outlet_id = ANY($3::text[])`
@@ -260,7 +271,7 @@ func GetSalesReport(dateFrom, dateTo, outletID string, scopeIDs []string, page, 
 			TO_CHAR(t.created_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
 		FROM cloud_transactions t
 		LEFT JOIN outlets o ON o.id = t.outlet_id
-		WHERE tz_date(t.created_at) >= $1::date AND tz_date(t.created_at) <= $2::date`
+		WHERE tz_date(t.created_at) >= $1::date AND tz_date(t.created_at) <= $2::date` + txNotVoided("t")
 
 	txArgs := []interface{}{dateFrom, dateTo}
 	paramIdx := 3
@@ -447,8 +458,9 @@ func GetProductSalesReport(dateFrom, dateTo, outletID string, scopeIDs []string)
 }
 
 func GetTaxReport(dateFrom, dateTo, outletID string, scopeIDs []string) (*models.TaxReportResponse, error) {
-	taxRate := GetTaxRate()
-	taxSettings, _ := GetTaxSettings()
+	// Pajak kini per-outlet & dihitung oleh App POS per transaksi, jadi laporan
+	// memakai nilai pajak nyata yang tersimpan (cloud_transactions.tax_amount),
+	// bukan estimasi dari satu tarif global.
 
 	// Normalize outlet filter
 	var filterIDs []string
@@ -456,6 +468,14 @@ func GetTaxReport(dateFrom, dateTo, outletID string, scopeIDs []string) (*models
 		filterIDs = []string{outletID}
 	} else if scopeIDs != nil {
 		filterIDs = scopeIDs
+	}
+
+	round2 := func(v float64) float64 { return math.Round(v*100) / 100 }
+	effRate := func(tax, net float64) float64 {
+		if net <= 0 {
+			return 0
+		}
+		return round2(tax / net * 100)
 	}
 
 	args := []interface{}{dateFrom, dateTo}
@@ -466,27 +486,29 @@ func GetTaxReport(dateFrom, dateTo, outletID string, scopeIDs []string) (*models
 	}
 
 	var totalTx int
-	var gross float64
+	var gross, tax float64
 	if err := database.DB.QueryRow(
-		`SELECT COUNT(*)::int, COALESCE(SUM(total_amount), 0)
+		`SELECT COUNT(*)::int, COALESCE(SUM(total_amount), 0), COALESCE(SUM(tax_amount), 0)
 		 FROM cloud_transactions
 		 WHERE tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date`+outletFilter,
 		args...,
-	).Scan(&totalTx, &gross); err != nil {
+	).Scan(&totalTx, &gross, &tax); err != nil {
 		return nil, err
 	}
 
-	round2 := func(v float64) float64 { return math.Round(v*100) / 100 }
+	gross = round2(gross)
+	tax = round2(tax)
 	summary := models.TaxReportSummary{
 		TotalTransactions: totalTx,
 		GrossRevenue:      gross,
-		TaxAmount:         round2(gross * taxRate),
-		NetRevenue:        round2(gross - gross*taxRate),
-		TaxRate:           taxSettings.TaxRate,
+		TaxAmount:         tax,
+		NetRevenue:        round2(gross - tax),
+		TaxRate:           effRate(tax, gross-tax), // tarif efektif gabungan
 	}
 
 	dailyRows, err := database.DB.Query(
-		`SELECT TO_CHAR(tz_date(created_at), 'YYYY-MM-DD'), COUNT(*)::int, COALESCE(SUM(total_amount), 0)
+		`SELECT TO_CHAR(tz_date(created_at), 'YYYY-MM-DD'), COUNT(*)::int,
+			COALESCE(SUM(total_amount), 0), COALESCE(SUM(tax_amount), 0)
 		 FROM cloud_transactions
 		 WHERE tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date`+outletFilter+`
 		 GROUP BY tz_date(created_at) ORDER BY tz_date(created_at) DESC`,
@@ -500,13 +522,13 @@ func GetTaxReport(dateFrom, dateTo, outletID string, scopeIDs []string) (*models
 	daily := make([]models.TaxReportRow, 0)
 	for dailyRows.Next() {
 		var r models.TaxReportRow
-		var g float64
-		if err := dailyRows.Scan(&r.Date, &r.TotalTransactions, &g); err != nil {
+		var g, t float64
+		if err := dailyRows.Scan(&r.Date, &r.TotalTransactions, &g, &t); err != nil {
 			return nil, err
 		}
-		r.GrossRevenue = g
-		r.TaxAmount = round2(g * taxRate)
-		r.NetRevenue = round2(g - g*taxRate)
+		r.GrossRevenue = round2(g)
+		r.TaxAmount = round2(t)
+		r.NetRevenue = round2(g - t)
 		daily = append(daily, r)
 	}
 	if err := dailyRows.Err(); err != nil {
@@ -520,11 +542,13 @@ func GetTaxReport(dateFrom, dateTo, outletID string, scopeIDs []string) (*models
 		outletArgs = append(outletArgs, pq.Array(filterIDs))
 	}
 	outletRows, err := database.DB.Query(
-		`SELECT t.outlet_id, COALESCE(o.name, t.outlet_code), COALESCE(SUM(t.total_amount), 0)
+		`SELECT t.outlet_id, COALESCE(o.name, t.outlet_code),
+			COALESCE(SUM(t.total_amount), 0), COALESCE(SUM(t.tax_amount), 0),
+			COALESCE(o.tax_rate, 0), COALESCE(o.tax_enabled, false)
 		 FROM cloud_transactions t
 		 LEFT JOIN outlets o ON o.id = t.outlet_id
 		 WHERE tz_date(t.created_at) >= $1::date AND tz_date(t.created_at) <= $2::date`+outletFilter2+`
-		 GROUP BY t.outlet_id, o.name, t.outlet_code
+		 GROUP BY t.outlet_id, o.name, t.outlet_code, o.tax_rate, o.tax_enabled
 		 ORDER BY SUM(t.total_amount) DESC`,
 		outletArgs...,
 	)
@@ -536,13 +560,13 @@ func GetTaxReport(dateFrom, dateTo, outletID string, scopeIDs []string) (*models
 	byOutlet := make([]models.TaxOutletRow, 0)
 	for outletRows.Next() {
 		var r models.TaxOutletRow
-		var g float64
-		if err := outletRows.Scan(&r.OutletID, &r.OutletName, &g); err != nil {
+		var g, t float64
+		if err := outletRows.Scan(&r.OutletID, &r.OutletName, &g, &t, &r.TaxRate, &r.TaxEnabled); err != nil {
 			return nil, err
 		}
-		r.GrossRevenue = g
-		r.TaxAmount = round2(g * taxRate)
-		r.NetRevenue = round2(g - g*taxRate)
+		r.GrossRevenue = round2(g)
+		r.TaxAmount = round2(t)
+		r.NetRevenue = round2(g - t)
 		byOutlet = append(byOutlet, r)
 	}
 	if err := outletRows.Err(); err != nil {

@@ -61,11 +61,12 @@ type PushOrderRequest struct {
 	LocalID      string      `json:"local_id"`
 	OutletID     string      `json:"outlet_id"`
 	OutletCode   string      `json:"outlet_code"`
-	TableNumber  string      `json:"table_number"`
-	CustomerName string      `json:"customer_name"`
-	OrdererName  string      `json:"orderer_name"` // label "Pemesan" gabungan (seperti struk)
-	CreatedBy    string      `json:"created_by"`   // pembuat order (1 orang)
-	Pax          int         `json:"pax"`
+	TableNumber   string      `json:"table_number"`
+	CustomerName  string      `json:"customer_name"`
+	CustomerPhone string      `json:"customer_phone"` // no. HP pelanggan (opsional)
+	OrdererName   string      `json:"orderer_name"`   // label "Pemesan" gabungan (seperti struk)
+	CreatedBy     string      `json:"created_by"`     // pembuat order (1 orang)
+	Pax           int         `json:"pax"`
 	TotalAmount  float64     `json:"total_amount"`
 	Status       string      `json:"status"`
 	Items        []OrderItem `json:"items"`
@@ -106,11 +107,12 @@ type CloudOrder struct {
 	LocalID      string    `json:"local_id"`
 	OutletID     string    `json:"outlet_id"`
 	OutletCode   string    `json:"outlet_code"`
-	TableNumber  string    `json:"table_number"`
-	CustomerName string    `json:"customer_name"`
-	Pax          int       `json:"pax"`
-	TotalAmount  float64   `json:"total_amount"`
-	Status       string    `json:"status"`
+	TableNumber   string    `json:"table_number"`
+	CustomerName  string    `json:"customer_name"`
+	CustomerPhone string    `json:"customer_phone"`
+	Pax           int       `json:"pax"`
+	TotalAmount   float64   `json:"total_amount"`
+	Status        string    `json:"status"`
 	Items        string    `json:"items"`
 	PaymentInfo  string    `json:"payment_info"`
 	Version      int       `json:"version"`

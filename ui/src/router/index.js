@@ -46,6 +46,7 @@ const OutletInfo     = () => import('@/pages/outlet/OutletInfo.vue')
 const ProcurementDashboard = () => import('@/pages/outlet/ProcurementDashboard.vue')
 const ProductsAdmin       = () => import('@/pages/Products.vue')
 const SalesReport         = () => import('@/pages/SalesReport.vue')
+const CashierShiftReport  = () => import('@/pages/CashierShiftReport.vue')
 const ProductSalesReport  = () => import('@/pages/ProductSalesReport.vue')
 const Assets              = () => import('@/pages/Assets.vue')
 const Reservations        = () => import('@/pages/Reservations.vue')
@@ -75,6 +76,7 @@ const ManagerDashboard = () => import('@/pages/ManagerDashboard.vue')
 const CompanyIdentity     = () => import('@/pages/CompanyIdentity.vue')
 const TimezoneSettings    = () => import('@/pages/TimezoneSettings.vue')
 const TaxSettings         = () => import('@/pages/TaxSettings.vue')
+const DeviceMonitor       = () => import('@/pages/DeviceMonitor.vue')
 const Warehouses          = () => import('@/pages/Warehouses.vue')
 const WarehouseDashboard  = () => import('@/pages/WarehouseDashboard.vue')
 const StockItems          = () => import('@/pages/StockItems.vue')
@@ -229,6 +231,12 @@ const routes = [
         meta: { title: 'Laporan Pendapatan — Cloud POS', requiresAuth: true, permission: 'reports.sales.view' },
       },
       {
+        path: 'cashier-shifts',
+        name: 'CashierShiftReport',
+        component: CashierShiftReport,
+        meta: { title: 'Laporan Shift Kasir — Cloud POS', requiresAuth: true, permission: 'cashier_shifts.view' },
+      },
+      {
         path: 'product-sales-report',
         name: 'ProductSalesReport',
         component: ProductSalesReport,
@@ -341,6 +349,12 @@ const routes = [
         name: 'TaxSettings',
         component: TaxSettings,
         meta: { title: 'Pengaturan Pajak — Cloud POS', requiresAuth: true, permission: 'settings.tax.view' },
+      },
+      {
+        path: 'settings/devices',
+        name: 'DeviceMonitor',
+        component: DeviceMonitor,
+        meta: { title: 'Perangkat — Cloud POS', requiresAuth: true, permission: 'devices.view' },
       },
       // ── Warehouse / Gudang ──────────────────────────────
       {

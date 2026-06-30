@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strconv"
 	"time"
+
+	"github.com/lib/pq"
 )
 
 // validTimezones contains common Indonesian and international timezones
@@ -223,6 +225,83 @@ func UpdateTaxSettings(data models.TaxSettings) error {
 // Returns 0 if tax is disabled.
 func GetTaxRate() float64 {
 	ts, err := GetTaxSettings()
+	if err != nil || !ts.TaxEnabled || ts.TaxRate <= 0 {
+		return 0
+	}
+	return ts.TaxRate / (100 + ts.TaxRate)
+}
+
+// ── Pajak per-outlet ────────────────────────────────────────────────────────
+// Sejak pajak dibuat per-outlet, sumber kebenaran pajak ada di kolom tabel outlets.
+
+// GetOutletTaxSettings mengembalikan pengaturan pajak khusus satu outlet.
+func GetOutletTaxSettings(outletID string) (models.TaxSettings, error) {
+	var ts models.TaxSettings
+	err := database.DB.QueryRow(
+		`SELECT COALESCE(tax_enabled,false), COALESCE(tax_rate,0), COALESCE(NULLIF(tax_name,''),'Pajak Restoran (PB1)')
+		 FROM outlets WHERE TRIM(id) = TRIM($1)`, outletID,
+	).Scan(&ts.TaxEnabled, &ts.TaxRate, &ts.TaxName)
+	if err != nil {
+		return models.TaxSettings{}, err
+	}
+	return ts, nil
+}
+
+// UpdateOutletTaxSettings menyimpan pengaturan pajak satu outlet.
+func UpdateOutletTaxSettings(outletID string, data models.TaxSettings) error {
+	if data.TaxRate < 0 || data.TaxRate > 100 {
+		return fmt.Errorf("tarif pajak harus antara 0-100%%")
+	}
+	if data.TaxName == "" {
+		data.TaxName = "Pajak Restoran (PB1)"
+	}
+	res, err := database.DB.Exec(
+		`UPDATE outlets SET tax_enabled = $1, tax_rate = $2, tax_name = $3, updated_at = NOW()
+		 WHERE TRIM(id) = TRIM($4)`,
+		data.TaxEnabled, data.TaxRate, data.TaxName, outletID,
+	)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("outlet tidak ditemukan")
+	}
+	return nil
+}
+
+// ListOutletTaxSettings mengembalikan pengaturan pajak semua outlet aktif (dalam scope).
+func ListOutletTaxSettings(scopeIDs []string) ([]models.OutletTaxRow, error) {
+	q := `SELECT TRIM(id), name, COALESCE(tax_enabled,false), COALESCE(tax_rate,0),
+		COALESCE(NULLIF(tax_name,''),'Pajak Restoran (PB1)')
+		FROM outlets WHERE is_active = true`
+	args := []interface{}{}
+	if scopeIDs != nil {
+		q += " AND id = ANY($1::text[])"
+		args = append(args, pq.Array(scopeIDs))
+	}
+	q += " ORDER BY name ASC"
+
+	rows, err := database.DB.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]models.OutletTaxRow, 0)
+	for rows.Next() {
+		var r models.OutletTaxRow
+		if err := rows.Scan(&r.OutletID, &r.OutletName, &r.TaxEnabled, &r.TaxRate, &r.TaxName); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// GetOutletTaxRate mengembalikan tarif pajak inklusif (fraksi) untuk satu outlet.
+// 0 bila pajak outlet nonaktif.
+func GetOutletTaxRate(outletID string) float64 {
+	ts, err := GetOutletTaxSettings(outletID)
 	if err != nil || !ts.TaxEnabled || ts.TaxRate <= 0 {
 		return 0
 	}

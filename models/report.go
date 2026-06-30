@@ -116,6 +116,8 @@ type TaxOutletRow struct {
 	GrossRevenue float64 `json:"gross_revenue"`
 	TaxAmount    float64 `json:"tax_amount"`
 	NetRevenue   float64 `json:"net_revenue"`
+	TaxRate      float64 `json:"tax_rate"`    // tarif terkonfigurasi outlet ini (%)
+	TaxEnabled   bool    `json:"tax_enabled"` // status pajak outlet ini
 }
 
 type TaxReportResponse struct {

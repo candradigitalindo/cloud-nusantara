@@ -153,7 +153,7 @@ func GetOutletInfo(c *fiber.Ctx) error {
 		})
 	}
 
-	taxSettings, _ := services.GetTaxSettings()
+	taxSettings, _ := services.GetOutletTaxSettings(outletID)
 
 	return c.JSON(models.APIResponse{
 		Success: true,

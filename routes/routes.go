@@ -72,6 +72,9 @@ func Setup(app *fiber.App, cfg *config.Config) {
 	// Restore — ambil state tertinggal setelah device reset database
 	outlet.Get("/restore", handlers.GetRestore)
 
+	// Heartbeat perangkat — telemetri tablet kasir (baterai, storage, printer, jaringan)
+	outlet.Post("/heartbeat", handlers.PushDeviceHeartbeat)
+
 	// Conflicts
 	outlet.Get("/conflicts", handlers.GetConflicts)
 	outlet.Post("/conflicts/:conflictId/resolve", handlers.ResolveConflict)
@@ -121,12 +124,20 @@ func Setup(app *fiber.App, cfg *config.Config) {
 	admin.Post("/outlets/:id/toggle", middleware.RequirePermission("outlets.update"), handlers.ToggleOutlet)
 	admin.Delete("/outlets/:id", middleware.RequirePermission("outlets.delete"), handlers.DeleteOutlet)
 
+	// Pajak per-outlet (Pengaturan > Pajak)
+	admin.Get("/outlet-taxes", middleware.RequirePermission("settings.tax.view"), handlers.ListOutletTax)
+	admin.Get("/outlets/:id/tax", middleware.RequirePermission("settings.tax.view"), handlers.GetOutletTax)
+	admin.Put("/outlets/:id/tax", middleware.RequirePermission("settings.tax.update"), handlers.UpdateOutletTax)
+
 	// Outlet procurement dashboard
 	admin.Get("/outlets/:id/procurement-dashboard", middleware.RequirePermission("procurement.dashboard.view"), handlers.GetProcurementDashboard)
 
 	// Reports (view-only by nature)
 	admin.Get("/sales-report", middleware.RequirePermission("reports.sales.view"), handlers.GetSalesReport)
 	admin.Get("/unpaid-orders", middleware.RequirePermission("reports.sales.view"), handlers.GetUnpaidOrders)
+	admin.Get("/cashier-shifts", middleware.RequirePermission("cashier_shifts.view"), handlers.GetCashierShiftReport)
+	admin.Get("/devices", middleware.RequirePermission("devices.view"), handlers.GetDeviceMonitor)
+	admin.Get("/devices/:outletId/history", middleware.RequirePermission("devices.view"), handlers.GetDeviceHistory)
 	admin.Get("/product-sales-report", middleware.RequirePermission("reports.product_sales.view"), handlers.GetProductSalesReport)
 	admin.Get("/tax-report", middleware.RequirePermission("reports.tax.view"), handlers.GetTaxReport)
 	admin.Get("/cash-flow-report", middleware.RequirePermission("reports.cashflow.view"), handlers.GetCashFlowReport)

@@ -30,3 +30,12 @@ type TaxSettings struct {
 	TaxRate    float64 `json:"tax_rate"`
 	TaxName    string  `json:"tax_name"`
 }
+
+// OutletTaxRow — baris pengaturan pajak satu outlet untuk tampilan daftar.
+type OutletTaxRow struct {
+	OutletID   string  `json:"outlet_id"`
+	OutletName string  `json:"outlet_name"`
+	TaxEnabled bool    `json:"tax_enabled"`
+	TaxRate    float64 `json:"tax_rate"`
+	TaxName    string  `json:"tax_name"`
+}

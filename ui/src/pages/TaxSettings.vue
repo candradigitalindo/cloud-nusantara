@@ -4,128 +4,171 @@
       <h1 class="text-xl font-bold text-gray-900">Pengaturan Pajak</h1>
     </div>
 
-    <AppAlert type="info" message="Pengaturan pajak berlaku untuk semua outlet. Pajak dihitung secara inklusif dari total transaksi." />
+    <AppAlert type="info" message="Pajak diatur per outlet. Aktifkan/nonaktifkan langsung lewat tombol, atau ubah tarif & nama lalu Simpan. Pajak inklusif & berlaku untuk transaksi baru di outlet tersebut." />
     <AppAlert type="error" :message="errorMsg" />
 
-    <AppCard>
-      <div v-if="loading" class="flex items-center justify-center py-12">
-        <AppSpinner />
-      </div>
+    <AppCard :padding="false">
+      <div v-if="loading" class="p-8 text-center text-sm text-gray-400">Memuat…</div>
+      <div v-else-if="!rows.length" class="p-8 text-center text-sm text-gray-400">Belum ada outlet.</div>
 
-      <form v-else @submit.prevent="save" class="space-y-5 max-w-xl">
-        <!-- Toggle Pajak -->
-        <div class="flex items-center justify-between p-4 rounded-lg border" :class="taxEnabled ? 'bg-emerald-50 border-emerald-200' : 'bg-gray-50 border-gray-200'">
-          <div>
-            <p class="font-medium" :class="taxEnabled ? 'text-emerald-900' : 'text-gray-700'">Pajak Aktif</p>
-            <p class="text-sm" :class="taxEnabled ? 'text-emerald-700' : 'text-gray-500'">
-              {{ taxEnabled ? 'Pajak akan dihitung pada setiap transaksi' : 'Pajak tidak aktif' }}
-            </p>
-          </div>
-          <button type="button" @click="taxEnabled = !taxEnabled"
-            class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2"
-            :class="taxEnabled ? 'bg-emerald-600' : 'bg-gray-300'"
-          >
-            <span class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
-              :class="taxEnabled ? 'translate-x-5' : 'translate-x-0'"
-            />
-          </button>
+      <template v-else>
+        <!-- Mobile cards -->
+        <ul class="sm:hidden divide-y divide-gray-100">
+          <li v-for="r in rows" :key="r.outlet_id" class="p-4 space-y-3">
+            <div class="flex items-start justify-between gap-2">
+              <p class="font-semibold text-gray-900">{{ r.outlet_name }}</p>
+              <ToggleBtn :on="r.tax_enabled" :loading="r.toggling" @click="toggle(r)" />
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="lbl">Tarif (%)</label>
+                <input v-model.number="r.tax_rate" type="number" step="0.01" min="0" max="100" class="form-input" />
+              </div>
+              <div>
+                <label class="lbl">Nama Pajak</label>
+                <input v-model="r.tax_name" type="text" class="form-input" placeholder="Pajak Restoran (PB1)" />
+              </div>
+            </div>
+            <div class="flex justify-end">
+              <AppButton size="sm" :loading="r.saving" :disabled="!dirty(r)" @click="saveRow(r)">Simpan</AppButton>
+            </div>
+          </li>
+        </ul>
+
+        <!-- Desktop table -->
+        <div class="hidden sm:block overflow-x-auto">
+          <table class="min-w-full text-sm">
+            <thead>
+              <tr class="border-b border-gray-200 text-left text-gray-500">
+                <th class="py-2.5 px-4 font-medium">Outlet</th>
+                <th class="py-2.5 px-4 font-medium w-32 text-right">Tarif (%)</th>
+                <th class="py-2.5 px-4 font-medium">Nama Pajak</th>
+                <th class="py-2.5 px-4 font-medium text-center w-28">Aktif</th>
+                <th class="py-2.5 px-4 font-medium text-right w-28"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="r in rows" :key="r.outlet_id" class="border-b border-gray-50 hover:bg-gray-50">
+                <td class="py-2.5 px-4 font-medium text-gray-900">{{ r.outlet_name }}</td>
+                <td class="py-2.5 px-4 text-right">
+                  <input v-model.number="r.tax_rate" type="number" step="0.01" min="0" max="100" class="form-input text-right w-24 ml-auto" />
+                </td>
+                <td class="py-2.5 px-4">
+                  <input v-model="r.tax_name" type="text" class="form-input" placeholder="Pajak Restoran (PB1)" />
+                </td>
+                <td class="py-2.5 px-4 text-center">
+                  <ToggleBtn :on="r.tax_enabled" :loading="r.toggling" @click="toggle(r)" />
+                </td>
+                <td class="py-2.5 px-4 text-right">
+                  <AppButton size="sm" :loading="r.saving" :disabled="!dirty(r)" @click="saveRow(r)">Simpan</AppButton>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
-
-        <!-- Nama Pajak -->
-        <AppInput v-model="taxName" label="Nama Pajak" placeholder="Contoh: Pajak Restoran (PB1)" />
-
-        <!-- Tarif Pajak -->
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Tarif Pajak (%)</label>
-          <div class="relative">
-            <input
-              v-model.number="taxRate"
-              type="number"
-              step="0.01"
-              min="0"
-              max="100"
-              class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 sm:text-sm pr-10"
-              placeholder="10"
-            />
-            <span class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-500 text-sm">%</span>
-          </div>
-        </div>
-
-        <!-- Preview -->
-        <div v-if="taxEnabled && taxRate > 0" class="p-4 rounded-lg bg-blue-50 border border-blue-200">
-          <p class="text-sm font-medium text-blue-800 mb-2">Simulasi Perhitungan</p>
-          <div class="space-y-1 text-sm text-blue-700">
-            <p>Contoh total transaksi: <strong>Rp 110.000</strong></p>
-            <p>{{ taxName || 'Pajak' }} ({{ taxRate }}% inklusif): <strong>Rp {{ formatNumber(simulatedTax) }}</strong></p>
-            <p>Pendapatan bersih: <strong>Rp {{ formatNumber(simulatedNet) }}</strong></p>
-          </div>
-        </div>
-
-        <div class="pt-3">
-          <AppButton type="submit" :loading="saving">Simpan</AppButton>
-        </div>
-      </form>
+      </template>
     </AppCard>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, onMounted, h } from 'vue'
 import { settingsApi } from '@/api/settings.js'
 import { useToastStore } from '@/stores/toast.js'
-import AppButton  from '@/components/ui/AppButton.vue'
-import AppCard    from '@/components/ui/AppCard.vue'
-import AppInput   from '@/components/ui/AppInput.vue'
-import AppAlert   from '@/components/ui/AppAlert.vue'
-import AppSpinner from '@/components/ui/AppSpinner.vue'
+import AppCard   from '@/components/ui/AppCard.vue'
+import AppAlert  from '@/components/ui/AppAlert.vue'
+import AppButton from '@/components/ui/AppButton.vue'
 
 const toast    = useToastStore()
 const loading  = ref(true)
-const saving   = ref(false)
 const errorMsg = ref('')
+const rows     = ref([])
 
-const taxEnabled = ref(false)
-const taxRate    = ref(10)
-const taxName    = ref('Pajak Restoran (PB1)')
+// Toggle switch kecil sebagai komponen inline (render function, tanpa file terpisah).
+const ToggleBtn = (props, { emit }) =>
+  h('button', {
+    type: 'button',
+    disabled: props.loading,
+    onClick: () => emit('click'),
+    class: ['relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none',
+      props.loading ? 'opacity-60 cursor-wait' : 'cursor-pointer',
+      props.on ? 'bg-emerald-600' : 'bg-gray-300'],
+  }, [
+    h('span', { class: ['pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200 ease-in-out',
+      props.on ? 'translate-x-5' : 'translate-x-0'] }),
+  ])
+ToggleBtn.props = ['on', 'loading']
+ToggleBtn.emits = ['click']
 
-const simulatedTax = computed(() => {
-  const rate = taxRate.value / (100 + taxRate.value)
-  return Math.round(110000 * rate)
-})
+function snapshot(r) { return `${r.tax_rate}|${r.tax_name}` }
+function dirty(r) { return r._orig !== snapshot(r) }
 
-const simulatedNet = computed(() => 110000 - simulatedTax.value)
-
-function formatNumber(n) {
-  return new Intl.NumberFormat('id-ID').format(n)
-}
-
-onMounted(async () => {
+async function load() {
+  loading.value = true; errorMsg.value = ''
   try {
-    const data = await settingsApi.getTax()
-    taxEnabled.value = data.tax_enabled ?? false
-    taxRate.value    = data.tax_rate ?? 10
-    taxName.value    = data.tax_name || 'Pajak Restoran (PB1)'
-  } catch {
-    errorMsg.value = 'Gagal memuat pengaturan pajak'
+    const d = await settingsApi.listOutletTax()
+    const list = d?.data ?? d ?? []
+    rows.value = list.map(o => ({
+      ...o,
+      tax_name: o.tax_name || 'Pajak Restoran (PB1)',
+      saving: false,
+      toggling: false,
+      _orig: `${o.tax_rate}|${o.tax_name || 'Pajak Restoran (PB1)'}`,
+    }))
+  } catch (e) {
+    errorMsg.value = e?.message || 'Gagal memuat daftar pajak outlet'
   } finally {
     loading.value = false
   }
-})
+}
 
-async function save() {
-  saving.value = true
-  errorMsg.value = ''
+async function persist(r) {
+  return settingsApi.updateOutletTax(r.outlet_id, {
+    tax_enabled: r.tax_enabled,
+    tax_rate:    r.tax_rate,
+    tax_name:    r.tax_name,
+  })
+}
+
+// Toggle Aktif → langsung simpan.
+async function toggle(r) {
+  const next = !r.tax_enabled
+  r.toggling = true
   try {
-    await settingsApi.updateTax({
-      tax_enabled: taxEnabled.value,
-      tax_rate:    taxRate.value,
-      tax_name:    taxName.value,
-    })
-    toast.success('Pengaturan pajak berhasil disimpan')
-  } catch (err) {
-    errorMsg.value = err?.response?.data?.error || 'Gagal menyimpan pengaturan pajak'
+    r.tax_enabled = next
+    await persist(r)
+    toast.success(`Pajak ${r.outlet_name} ${next ? 'diaktifkan' : 'dinonaktifkan'}`)
+  } catch (e) {
+    r.tax_enabled = !next // rollback
+    toast.error(e?.response?.data?.error || 'Gagal mengubah status pajak')
   } finally {
-    saving.value = false
+    r.toggling = false
   }
 }
+
+// Simpan perubahan tarif / nama.
+async function saveRow(r) {
+  if (r.tax_rate < 0 || r.tax_rate > 100) {
+    toast.error('Tarif pajak harus 0-100%')
+    return
+  }
+  r.saving = true
+  try {
+    await persist(r)
+    r._orig = snapshot(r)
+    toast.success(`Pajak ${r.outlet_name} disimpan`)
+  } catch (e) {
+    toast.error(e?.response?.data?.error || 'Gagal menyimpan')
+  } finally {
+    r.saving = false
+  }
+}
+
+onMounted(load)
 </script>
+
+<style scoped>
+.form-input { width: 100%; padding: .4rem .6rem; border-radius: .5rem; font-size: .85rem; border: 1px solid rgba(0,0,0,.14); background: #fff; color: #111827; outline: none; }
+.form-input:focus { border-color: rgba(5,150,105,.5); box-shadow: 0 0 0 3px rgba(5,150,105,.12); }
+.lbl { display: block; font-size: .68rem; font-weight: 600; color: #6b7280; margin-bottom: .15rem; }
+</style>

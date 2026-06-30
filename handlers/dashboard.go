@@ -27,7 +27,7 @@ func GetDashboard(c *fiber.Ctx) error {
 
 func GetManagerDashboard(c *fiber.Ctx) error {
 	scopeIDs := getOutletScope(c)
-	stats, err := services.GetManagerDashboard(scopeIDs)
+	stats, err := services.GetManagerDashboard(scopeIDs, c.Query("date_from"), c.Query("date_to"))
 	if err != nil {
 		log.Printf("GetManagerDashboard error: %v", err)
 		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{

@@ -45,8 +45,8 @@
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
         </svg>
         <p class="text-xs text-gray-500">
-          Tarif pajak restoran <strong>{{ report.summary.tax_rate }}%</strong> inclusive (sudah termasuk dalam harga jual).
-          Rumus: Pajak = Bruto × {{ report.summary.tax_rate }}/(100+{{ report.summary.tax_rate }})
+          Pajak dihitung <strong>per outlet</strong> dari nilai pajak nyata tiap transaksi (inklusif).
+          Tarif efektif gabungan <strong>{{ report.summary.tax_rate }}%</strong> — rincian tarif tiap outlet ada di tabel "Per Outlet".
         </p>
       </div>
 
@@ -81,6 +81,10 @@
           <h3 class="text-sm font-semibold text-gray-700">Per Outlet</h3>
         </div>
         <AppTable :columns="OUTLET_COLS" :rows="report.by_outlet" :loading="false" emptyText="Tidak ada data.">
+          <template #cell-tax_rate="{ row }">
+            <span v-if="row.tax_enabled" class="text-gray-700">{{ row.tax_rate }}%</span>
+            <span v-else class="text-gray-400">Nonaktif</span>
+          </template>
           <template #cell-gross_revenue="{ row }">{{ formatRupiah(row.gross_revenue) }}</template>
           <template #cell-tax_amount="{ row }">
             <span class="text-amber-600 font-medium">{{ formatRupiah(row.tax_amount) }}</span>
@@ -130,8 +134,9 @@ const DAILY_COLS = computed(() => [
 
 const OUTLET_COLS = computed(() => [
   { key: 'outlet_name',   label: 'Outlet' },
+  { key: 'tax_rate',      label: 'Tarif', align: 'right' },
   { key: 'gross_revenue', label: 'Bruto', align: 'right' },
-  { key: 'tax_amount',    label: taxRateLabel.value, align: 'right' },
+  { key: 'tax_amount',    label: 'Pajak', align: 'right' },
   { key: 'net_revenue',   label: 'Neto', align: 'right' },
 ])
 

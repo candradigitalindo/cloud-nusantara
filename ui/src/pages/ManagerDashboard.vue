@@ -14,14 +14,7 @@
         <h1 class="page-title">Dashboard</h1>
         <p class="page-sub">Ringkasan performa bisnis untuk pengambilan keputusan</p>
       </div>
-      <div class="date-chip">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
-        </svg>
-        <span>{{ currentDate }}</span>
-        <span class="live-dot" />
-        <span>Live</span>
-      </div>
+      <DateRangePicker v-model="range" />
     </div>
 
     <!-- ── Loading ── -->
@@ -57,7 +50,7 @@
           </div>
 
           <p class="sc-label">{{ kpi.label }}</p>
-          <p class="sc-value">{{ fmtKPI(kpi, data[kpi.key]) }}</p>
+          <p class="sc-value">{{ kpi.val ? kpi.val(data) : fmtKPI(kpi, data[kpi.key]) }}</p>
           <p v-if="kpi.sub" class="sc-sub">{{ kpi.sub(data) }}</p>
 
           <div v-if="kpiSparks[kpi.key]?.length" class="sc-spark">
@@ -85,9 +78,8 @@
               <tr class="tbl-head">
                 <th class="th-l">#</th>
                 <th class="th-l">Outlet</th>
-                <th class="th-r">Hari Ini</th>
-                <th class="th-r">Bulan Ini</th>
-                <th class="th-r">Order Bulan Ini</th>
+                <th class="th-r">Pendapatan</th>
+                <th class="th-r">Transaksi / Pax</th>
                 <th class="th-r">Belum Lunas</th>
                 <th class="th-c">Sinkron</th>
                 <th class="th-c">Kontribusi</th>
@@ -101,9 +93,8 @@
                 <td class="py-3 px-4">
                   <RouterLink :to="`/outlets/${o.id}`" class="outlet-name">{{ o.name }}</RouterLink>
                 </td>
-                <td class="py-3 px-4 text-right tabular-nums font-medium text-gray-800">{{ formatRupiah(o.today_revenue) }}</td>
-                <td class="py-3 px-4 text-right tabular-nums font-semibold text-gray-900">{{ formatRupiah(o.month_revenue) }}</td>
-                <td class="py-3 px-4 text-right tabular-nums text-gray-600">{{ o.month_orders }}</td>
+                <td class="py-3 px-4 text-right tabular-nums font-semibold text-gray-900">{{ formatRupiah(o.range_revenue) }}</td>
+                <td class="py-3 px-4 text-right tabular-nums text-gray-600">{{ o.range_orders }} <span class="text-gray-400">/ {{ o.range_pax }}</span></td>
                 <td class="py-3 px-4 text-right tabular-nums">
                   <span :class="o.unpaid_amount > 0 ? 'text-amber-600 font-semibold' : 'text-gray-400'">{{ formatRupiah(o.unpaid_amount) }}</span>
                 </td>
@@ -117,14 +108,14 @@
                 <td class="py-3 px-4">
                   <div class="flex items-center gap-2 justify-center">
                     <div class="contrib-track">
-                      <div class="contrib-fill" :style="{ width: contribution(o.month_revenue) + '%' }" />
+                      <div class="contrib-fill" :style="{ width: contribution(o.range_revenue) + '%' }" />
                     </div>
-                    <span class="text-xs font-medium text-gray-500 tabular-nums w-10 text-right">{{ contribution(o.month_revenue).toFixed(1) }}%</span>
+                    <span class="text-xs font-medium text-gray-500 tabular-nums w-10 text-right">{{ contribution(o.range_revenue).toFixed(1) }}%</span>
                   </div>
                 </td>
               </tr>
               <tr v-if="!data.outlet_ranking?.length">
-                <td colspan="8" class="py-8 text-center text-gray-400 text-sm">Belum ada data outlet.</td>
+                <td colspan="7" class="py-8 text-center text-gray-400 text-sm">Belum ada data outlet.</td>
               </tr>
             </tbody>
           </table>
@@ -147,7 +138,7 @@
             </div>
             <div class="flex items-center gap-4 text-xs">
               <span class="legend-dot"><span class="ld" style="background:#3b82f6"></span>Pendapatan</span>
-              <span class="legend-dot"><span class="ld" style="background:#10b981"></span>Pesanan</span>
+              <span class="legend-dot"><span class="ld" style="background:#10b981"></span>Transaksi</span>
             </div>
           </div>
           <!-- mini summary strip -->
@@ -335,46 +326,52 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import VueApexCharts from 'vue3-apexcharts'
 import { apiClient } from '@/api/client.js'
 import { formatRupiah, timeAgo } from '@/utils/format.js'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
 import AppAlert from '@/components/ui/AppAlert.vue'
+import DateRangePicker from '@/components/ui/DateRangePicker.vue'
 
 const data     = ref(null)
 const loading  = ref(false)
 const errorMsg = ref('')
 
-const currentDate = new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+// Rentang tanggal terpilih (default: Hari Ini)
+function ymd(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
+const _today = ymd(new Date())
+const range = ref({ from: _today, to: _today, label: 'Hari Ini' })
+watch(range, fetchData)
 
 // ── KPI card definitions ────────────────────────────────────
 const SPARK_COLOR = { emerald: '#10b981', blue: '#3b82f6', violet: '#8b5cf6', amber: '#f59e0b' }
 
 const KPI_CARDS = [
   {
-    key: 'today_revenue', prevKey: 'yesterday_revenue', label: 'Pendapatan Hari Ini',
+    key: 'range_revenue', prevKey: 'range_revenue_prev', label: 'Pendapatan',
     theme: 'emerald', fmt: 'rupiah',
     icon: '<svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.9"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>',
-    sub: (d) => `Kemarin: ${formatRupiah(d.yesterday_revenue)}`,
+    sub: (d) => `Periode sebelumnya: ${formatRupiah(d.range_revenue_prev)}`,
   },
   {
-    key: 'today_orders', prevKey: 'yesterday_orders', label: 'Pesanan Hari Ini',
+    key: 'range_orders', prevKey: 'range_orders_prev', label: 'Transaksi / Pax',
     theme: 'blue', fmt: 'number',
+    val: (d) => `${num(d.range_orders)} / ${num(d.range_pax)}`,
     icon: '<svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.9"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>',
-    sub: (d) => `Kemarin: ${d.yesterday_orders} pesanan`,
+    sub: (d) => `Sebelumnya: ${num(d.range_orders_prev)} trx · ${num(d.range_pax_prev)} pax`,
   },
   {
-    key: 'month_revenue', prevKey: 'month_revenue_prev', label: 'Pendapatan Bulan Ini',
-    theme: 'violet', fmt: 'rupiah',
-    icon: '<svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.9"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>',
-    sub: (d) => `Bulan lalu: ${formatRupiah(d.month_revenue_prev)}`,
-  },
-  {
-    key: 'today_avg_order', label: 'Rata-rata per Order',
+    key: 'range_avg_order', label: 'Rata-rata per Transaksi',
     theme: 'amber', fmt: 'rupiah',
     icon: '<svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.9"><path stroke-linecap="round" stroke-linejoin="round" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"/></svg>',
-    sub: (d) => `Total ${d.today_orders} pesanan hari ini`,
+    sub: (d) => `Dari ${num(d.range_orders)} transaksi · ${num(d.range_pax)} pax`,
+  },
+  {
+    key: 'unpaid_amount', label: 'Belum Lunas',
+    theme: 'violet', fmt: 'rupiah',
+    icon: '<svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.9"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>',
+    sub: (d) => `${d.unpaid_orders} pesanan outstanding`,
   },
 ]
 
@@ -385,7 +382,7 @@ async function fetchData() {
   loading.value = true
   errorMsg.value = ''
   try {
-    data.value = await apiClient.get('/admin/manager-dashboard')
+    data.value = await apiClient.get('/admin/manager-dashboard', { params: { date_from: range.value.from, date_to: range.value.to } })
   } catch (err) {
     errorMsg.value = err?.message ?? 'Gagal memuat data dashboard.'
   } finally {
@@ -399,6 +396,8 @@ function fmtKPI(kpi, val) {
   if (kpi.fmt === 'rupiah') return formatRupiah(val)
   return Number(val).toLocaleString('id-ID')
 }
+
+function num(v) { return Number(v ?? 0).toLocaleString('id-ID') }
 
 // Compact rupiah for tight spaces (axis ticks, radial center)
 function fmtCompact(v) {
@@ -418,9 +417,14 @@ function trendDir(curr, prev) {
   return curr >= prev ? 'trend-up' : 'trend-down'
 }
 
-function contribution(monthRevenue) {
-  const total = data.value?.outlet_ranking?.reduce((s, o) => s + o.month_revenue, 0) || 1
-  return (monthRevenue / total) * 100
+function contribution(rangeRevenue) {
+  // Kontribusi dihitung terhadap total SELURUH perusahaan (global_range_revenue),
+  // sehingga manajer outlet tetap tahu porsi outletnya terhadap keseluruhan.
+  // Fallback ke jumlah outlet yang terlihat bila total global belum tersedia.
+  const total = (data.value?.global_range_revenue > 0)
+    ? data.value.global_range_revenue
+    : (data.value?.outlet_ranking?.reduce((s, o) => s + o.range_revenue, 0) || 1)
+  return total > 0 ? (rangeRevenue / total) * 100 : 0
 }
 
 function rankClass(i) {
@@ -497,7 +501,7 @@ const revenueSeries = computed(() => {
   if (!data.value?.revenue_trend?.length) return null
   return [
     { name: 'Pendapatan', type: 'area', data: data.value.revenue_trend.map(d => d.value) },
-    { name: 'Pesanan',    type: 'line', data: (data.value.order_trend ?? []).map(d => d.value) },
+    { name: 'Transaksi',    type: 'line', data: (data.value.order_trend ?? []).map(d => d.value) },
   ]
 })
 
@@ -529,7 +533,7 @@ const revenueOpts = computed(() => {
     },
     yaxis: [
       { seriesName: 'Pendapatan', labels: { style: { colors: '#94a3b8', fontSize: '11px' }, formatter: (v) => v >= 1e6 ? (v / 1e6).toFixed(1) + 'jt' : v >= 1e3 ? (v / 1e3).toFixed(0) + 'rb' : Math.round(v) } },
-      { seriesName: 'Pesanan', opposite: true, labels: { style: { colors: '#94a3b8', fontSize: '11px' }, formatter: (v) => Math.round(v) } },
+      { seriesName: 'Transaksi', opposite: true, labels: { style: { colors: '#94a3b8', fontSize: '11px' }, formatter: (v) => Math.round(v) } },
     ],
     legend: { show: false },
     tooltip: {

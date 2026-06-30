@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 )
 
@@ -41,13 +42,14 @@ func SaveOrder(outletID string, req models.PushOrderRequest) (string, error) {
 	}
 	err := database.DB.QueryRow(
 		`INSERT INTO cloud_orders (id, local_id, outlet_id, outlet_code, table_number,
-			customer_name, orderer_name, created_by, pax, total_amount, status, items, payment_info, version,
+			customer_name, customer_phone, orderer_name, created_by, pax, total_amount, status, items, payment_info, version,
 			created_at, updated_at, synced_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW())
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW())
 		ON CONFLICT (outlet_id, local_id) DO UPDATE SET
 			id = EXCLUDED.id,
 			table_number = EXCLUDED.table_number,
 			customer_name = EXCLUDED.customer_name,
+			customer_phone = EXCLUDED.customer_phone,
 			orderer_name = EXCLUDED.orderer_name,
 			created_by = EXCLUDED.created_by,
 			pax = EXCLUDED.pax,
@@ -59,13 +61,21 @@ func SaveOrder(outletID string, req models.PushOrderRequest) (string, error) {
 			synced_at = NOW()
 		RETURNING id`,
 		cloudID, cloudID, outletID, req.OutletCode, req.TableNumber,
-		req.CustomerName, req.OrdererName, req.CreatedBy, req.Pax, req.TotalAmount, req.Status,
+		req.CustomerName, req.CustomerPhone, req.OrdererName, req.CreatedBy, req.Pax, req.TotalAmount, req.Status,
 		string(itemsJSON), string(paymentJSON), req.Version,
 		parseTime(req.CreatedAt), parseTime(req.UpdatedAt),
 	).Scan(&cloudID)
 
 	if err != nil {
 		return "", err
+	}
+
+	// Bila order di-void, transaksinya (bila ada) bukan penjualan sah → hapus dari
+	// cloud_transactions + transaction_payments agar tidak terhitung di laporan/dashboard.
+	if strings.TrimSpace(req.PaymentInfo.VoidedAt) != "" {
+		oid := strings.TrimSpace(cloudID) // RETURNING id bisa ter-padding (CHAR 26); order_id varchar tak padded
+		database.DB.Exec(`DELETE FROM transaction_payments WHERE transaction_id IN (SELECT id FROM cloud_transactions WHERE TRIM(order_id) = $1)`, oid)
+		database.DB.Exec(`DELETE FROM cloud_transactions WHERE TRIM(order_id) = $1`, oid)
 	}
 
 	go logSync(outletID, "push_order", "order", 1, "success", "")
@@ -81,7 +91,7 @@ func GetOrders(outletID string, page, limit int) ([]models.CloudOrder, int, erro
 
 	rows, err := database.DB.Query(
 		`SELECT id, local_id, outlet_id, outlet_code, COALESCE(table_number,''),
-			COALESCE(customer_name,''), pax, total_amount, status,
+			COALESCE(customer_name,''), COALESCE(customer_phone,''), pax, total_amount, status,
 			COALESCE(items::text,'[]'), COALESCE(payment_info::text,'{}'),
 			version, created_at, updated_at, synced_at
 		FROM cloud_orders WHERE outlet_id = $1
@@ -97,7 +107,7 @@ func GetOrders(outletID string, page, limit int) ([]models.CloudOrder, int, erro
 	for rows.Next() {
 		var o models.CloudOrder
 		if err := rows.Scan(&o.ID, &o.LocalID, &o.OutletID, &o.OutletCode,
-			&o.TableNumber, &o.CustomerName, &o.Pax, &o.TotalAmount, &o.Status,
+			&o.TableNumber, &o.CustomerName, &o.CustomerPhone, &o.Pax, &o.TotalAmount, &o.Status,
 			&o.Items, &o.PaymentInfo, &o.Version, &o.CreatedAt, &o.UpdatedAt, &o.SyncedAt); err != nil {
 			return nil, 0, err
 		}
@@ -113,6 +123,15 @@ func SaveTransaction(outletID string, req models.PushTransactionRequest) (string
 	cloudID := req.LocalID
 	if cloudID == "" {
 		cloudID = NewULID()
+	}
+
+	// Bila order tertaut sudah di-void, jangan catat transaksinya (bukan penjualan sah).
+	if req.OrderID != "" {
+		var voidedAt string
+		database.DB.QueryRow(`SELECT COALESCE(payment_info->>'voided_at','') FROM cloud_orders WHERE id = $1`, req.OrderID).Scan(&voidedAt)
+		if strings.TrimSpace(voidedAt) != "" {
+			return cloudID, nil
+		}
 	}
 
 	// Waktu transaksi: pakai created_at payload bila valid; bila kosong/tak valid
@@ -137,6 +156,16 @@ func SaveTransaction(outletID string, req models.PushTransactionRequest) (string
 	cashierName := req.CashierName
 	if cashierName == "" {
 		cashierName = req.CreatedBy
+	}
+
+	// Transaksi komplimen ("dibayar" gratis) BUKAN penjualan: tidak ada uang masuk.
+	// App mengirim total_amount = nilai kotor item, padahal uang diterima Rp0.
+	// Nolkan total & pajak agar tak menggelembungkan omzet/pajak; baris tetap
+	// disimpan supaya kunjungan & pax tetap tercatat, dan nilai komplimen tetap
+	// terlihat di laporan Diskon & Komplimen (dihitung dari item order).
+	if strings.EqualFold(strings.TrimSpace(req.PaymentMethod), "compliment") {
+		req.TotalAmount = 0
+		req.TaxAmount = 0
 	}
 
 	err := database.DB.QueryRow(

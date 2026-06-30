@@ -42,6 +42,7 @@ var AllPermissions = []string{
 	"reports.tax.view",
 	"reports.void.view",
 	"reports.discount.view",
+	"cashier_shifts.view",
 	"finance.payments.view",
 	"finance.bank.view", "finance.bank.create", "finance.bank.update", "finance.bank.delete",
 
@@ -68,6 +69,7 @@ var AllPermissions = []string{
 	"settings.company.view", "settings.company.update",
 	"settings.timezone.view", "settings.timezone.update",
 	"settings.tax.view", "settings.tax.update",
+	"devices.view", // Monitoring perangkat (heartbeat tablet kasir)
 }
 
 func AdminLogin(req models.AdminLoginRequest, jwtSecret string) (*models.AdminLoginResponse, error) {

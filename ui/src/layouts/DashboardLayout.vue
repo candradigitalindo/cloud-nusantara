@@ -379,6 +379,7 @@ const NAV_ITEMS_DATA = [
     </svg>`,
     children: [
       { to: '/sales-report',         label: 'Pendapatan', permission: 'reports.sales.view' },
+      { to: '/cashier-shifts',       label: 'Shift Kasir', permission: 'cashier_shifts.view' },
       { to: '/procurement-payments',  label: 'Pembayaran', permission: 'finance.payments.view' },
       { to: '/product-sales-report', label: 'Penjualan Produk', permission: 'reports.product_sales.view' },
       { to: '/general-ledger',       label: 'Buku Besar', permission: 'reports.ledger.view' },
@@ -445,6 +446,7 @@ const NAV_ITEMS_DATA = [
       { to: '/settings/company',  label: 'Identitas Perusahaan', permission: 'settings.company.view' },
       { to: '/settings/timezone', label: 'Zona Waktu', permission: 'settings.timezone.view' },
       { to: '/settings/tax',     label: 'Pajak', permission: 'settings.tax.view' },
+      { to: '/settings/devices', label: 'Perangkat', permission: 'devices.view' },
     ],
   },
   {
