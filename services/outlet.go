@@ -5,6 +5,7 @@ import (
 	"cloud-pos/models"
 	"database/sql"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/lib/pq"
@@ -28,11 +29,16 @@ func CreateOutlet(req models.CreateOutletRequest) (*models.Outlet, error) {
 		return nil, err
 	}
 
-	// Auto-create work unit for this outlet
-	_ = CreateWorkUnitForOutlet(outlet.ID, outlet.Name)
+	// Auto-create work unit for this outlet (jangan diam-diam: catat bila gagal,
+	// karena kegagalan tersembunyi sempat membuat outlet tanpa unit kerja).
+	if e := CreateWorkUnitForOutlet(outlet.ID, outlet.Name); e != nil {
+		log.Printf("auto-create work unit gagal untuk outlet %s (%s): %v", outlet.Name, outlet.ID, e)
+	}
 
 	// Auto-create gudang outlet
-	_ = CreateOutletWarehouse(outlet.ID, outlet.Name, outlet.Code)
+	if e := CreateOutletWarehouse(outlet.ID, outlet.Name, outlet.Code); e != nil {
+		log.Printf("auto-create gudang gagal untuk outlet %s (%s): %v", outlet.Name, outlet.ID, e)
+	}
 
 	return outlet, nil
 }

@@ -107,10 +107,14 @@ func UpdateWorkUnit(id string, req models.UpdateWorkUnitRequest) (*models.WorkUn
 
 func CreateWorkUnitForOutlet(outletID, outletName string) error {
 	id := NewULID()
+	// Unique index `idx_work_units_outlet_unique` bersifat PARTIAL (WHERE outlet_id
+	// IS NOT NULL), jadi ON CONFLICT harus menyertakan predikat yang sama — tanpa itu
+	// PostgreSQL menolak ("no unique constraint matching") dan auto-create unit kerja
+	// gagal diam-diam (error ditelan pemanggil), seperti yang terjadi pada outlet baru.
 	_, err := database.DB.Exec(`
 		INSERT INTO work_units (id, outlet_id, name, created_at, updated_at)
 		VALUES ($1, $2, $3, NOW(), NOW())
-		ON CONFLICT (outlet_id) DO NOTHING
+		ON CONFLICT (outlet_id) WHERE outlet_id IS NOT NULL DO NOTHING
 	`, id, outletID, outletName)
 	return err
 }
