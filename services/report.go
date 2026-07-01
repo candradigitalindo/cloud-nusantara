@@ -205,7 +205,11 @@ func GetSalesReport(dateFrom, dateTo, outletID string, scopeIDs []string, page, 
 		LEFT JOIN (
 			SELECT outlet_id, COUNT(*) AS cnt, SUM(total_amount) AS amt
 			FROM cloud_orders
-			WHERE status NOT IN ('paid','cancelled','voided')
+			-- Belum bayar dilihat dari payment_info->>'payment_status' (bukan kolom
+			-- status yang menyimpan status dapur: cooking/served/completed), agar
+			-- definisinya sama dengan ringkasan dan tidak salah kolom.
+			WHERE COALESCE(payment_info->>'payment_status','unpaid') NOT IN ('paid')
+			  AND NULLIF(payment_info->>'voided_at','') IS NULL
 			  AND tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date
 			GROUP BY outlet_id
 		) uq ON uq.outlet_id = t.outlet_id
