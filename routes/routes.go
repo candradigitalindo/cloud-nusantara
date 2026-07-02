@@ -85,6 +85,10 @@ func Setup(app *fiber.App, cfg *config.Config) {
 	// Admin login (public — no auth required)
 	api.Post("/admin/login", middleware.LoginRateLimiter(), handlers.AdminLogin(cfg))
 
+	// SSE realtime — auth via ?token= (EventSource tidak bisa kirim header),
+	// jadi didaftarkan di luar grup AdminAuth; validasi token di handler.
+	api.Get("/admin/events", handlers.Events(cfg))
+
 	// Admin API (authenticated by admin token or JWT)
 	admin := api.Group("/admin", middleware.AdminAuth(cfg))
 

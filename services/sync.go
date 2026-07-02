@@ -131,6 +131,7 @@ func SaveCashierShift(outletID string, req models.PushCashierShiftRequest) (stri
 	}
 
 	go logSync(outletID, "push_cashier_shift", "cashier_shift", 1, "success", "")
+	BroadcastSync("cashier_shift", outletID)
 	return cloudID, nil
 }
 
@@ -168,6 +169,7 @@ func SaveOrderItemVoid(outletID string, req models.PushOrderItemVoidRequest) (st
 	}
 
 	go logSync(outletID, "push_order_item_void", "order_item_void", 1, "success", "")
+	BroadcastSync("order_item_void", outletID)
 	return cloudID, nil
 }
 
@@ -200,6 +202,7 @@ func SaveCashMovement(outletID string, req models.PushCashMovementRequest) (stri
 	}
 
 	go logSync(outletID, "push_cash_movement", "cash_movement", 1, "success", "")
+	BroadcastSync("cash_movement", outletID)
 	return cloudID, nil
 }
 

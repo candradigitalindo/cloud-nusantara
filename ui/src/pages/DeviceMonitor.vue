@@ -218,6 +218,7 @@ import AppCard from '@/components/ui/AppCard.vue'
 import AppAlert from '@/components/ui/AppAlert.vue'
 import AppModal from '@/components/ui/AppModal.vue'
 import SearchSelect from '@/components/ui/SearchSelect.vue'
+import { useRealtime } from '@/utils/realtime.js'
 
 const report = ref(null)
 const outlets = ref([])
@@ -334,6 +335,9 @@ function stopTimer() { if (timer) { clearInterval(timer); timer = null } }
 
 onMounted(async () => { await loadOutlets(); await load(); if (autoRefresh.value) startTimer() })
 onUnmounted(stopTimer)
+// SSE: refresh seketika saat heartbeat device masuk (polling 30 dtk tetap
+// berjalan sebagai fallback bila koneksi stream terputus).
+useRealtime(['device'], load)
 </script>
 
 <style scoped>

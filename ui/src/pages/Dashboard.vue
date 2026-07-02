@@ -181,6 +181,7 @@ import { ref, computed, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import { dashboardApi } from '@/api/dashboard.js'
 import { formatRupiah, timeAgo, formatDate } from '@/utils/format.js'
+import { useRealtime } from '@/utils/realtime.js'
 import AppTable  from '@/components/ui/AppTable.vue'
 import AppAlert  from '@/components/ui/AppAlert.vue'
 
@@ -276,6 +277,8 @@ const currentDate = computed(() => {
 
 // ── Lifecycle ─────────────────────────────────────────────────
 onMounted(fetchStats)
+// Auto-refresh saat ada transaksi/order baru masuk dari outlet (SSE).
+useRealtime(['transaction', 'order'], () => fetchStats())
 
 async function fetchStats(params) {
   loading.value  = true

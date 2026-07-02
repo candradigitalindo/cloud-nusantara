@@ -328,6 +328,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import VueApexCharts from 'vue3-apexcharts'
+import { useRealtime } from '@/utils/realtime.js'
 import { apiClient } from '@/api/client.js'
 import { formatRupiah, timeAgo } from '@/utils/format.js'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
@@ -345,6 +346,8 @@ function ymd(d) { return d.toLocaleDateString('en-CA', { timeZone: APP_TZ }) }
 const _today = ymd(new Date())
 const range = ref({ from: _today, to: _today, label: 'Hari Ini' })
 watch(range, fetchData)
+// Auto-refresh saat transaksi/order baru tersinkron dari outlet (SSE).
+useRealtime(['transaction', 'order'], fetchData)
 
 // ── KPI card definitions ────────────────────────────────────
 const SPARK_COLOR = { emerald: '#10b981', blue: '#3b82f6', violet: '#8b5cf6', amber: '#f59e0b' }

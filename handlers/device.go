@@ -27,6 +27,7 @@ func PushDeviceHeartbeat(c *fiber.Ctx) error {
 		// Tetap balas sukses-lunak; app tidak melakukan retry heartbeat.
 		return c.JSON(models.APIResponse{Success: false, Error: "Gagal menyimpan heartbeat"})
 	}
+	services.BroadcastSync("device", outletID)
 	return c.JSON(models.APIResponse{Success: true})
 }
 
