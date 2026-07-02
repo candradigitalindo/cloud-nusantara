@@ -1336,6 +1336,38 @@ func RunMigrations() error {
 		}
 	}
 
+	// ── Void item (hapus item dari order belum bayar) ──────────────────────
+	// Audit terpisah dari void transaksi: app POS mengirim entityType
+	// "order_item_void" saat satu item dihapus dari order (di-gate otorisasi
+	// Manager/SVP). Order-nya sendiri tetap di-upsert via entityType "order".
+	itemVoidMigrations := []string{
+		`CREATE TABLE IF NOT EXISTS order_item_voids (
+			id            CHAR(26) PRIMARY KEY,
+			local_id      VARCHAR(50) NOT NULL,
+			outlet_id     CHAR(26) NOT NULL REFERENCES outlets(id),
+			order_id      VARCHAR(50) NOT NULL DEFAULT '',
+			table_number  VARCHAR(50) NOT NULL DEFAULT '',
+			product_name  VARCHAR(200) NOT NULL DEFAULT '',
+			category_id   VARCHAR(50) NOT NULL DEFAULT '',
+			qty           DECIMAL(10,2) NOT NULL DEFAULT 0,
+			price         DECIMAL(15,2) NOT NULL DEFAULT 0,
+			subtotal      DECIMAL(15,2) NOT NULL DEFAULT 0,
+			waiter_name   VARCHAR(200) NOT NULL DEFAULT '',
+			voided_by     VARCHAR(200) NOT NULL DEFAULT '',
+			void_reason   TEXT NOT NULL DEFAULT '',
+			voided_at     TIMESTAMP,
+			created_at    TIMESTAMP NOT NULL DEFAULT (now() AT TIME ZONE 'UTC'),
+			synced_at     TIMESTAMP NOT NULL DEFAULT (now() AT TIME ZONE 'UTC'),
+			UNIQUE (outlet_id, local_id)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_order_item_voids_outlet ON order_item_voids(outlet_id, voided_at DESC)`,
+	}
+	for _, m := range itemVoidMigrations {
+		if _, err := DB.Exec(m); err != nil {
+			log.Printf("Order item void migration skipped: %v", err)
+		}
+	}
+
 	// Hak akses monitoring perangkat → superadmin, teknisi, dan semua role manager%.
 	DB.Exec("INSERT INTO role_permissions (role, permission) VALUES ('superadmin', 'devices.view') ON CONFLICT DO NOTHING")
 	DB.Exec("INSERT INTO role_permissions (role, permission) VALUES ('teknisi', 'devices.view') ON CONFLICT DO NOTHING")

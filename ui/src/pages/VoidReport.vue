@@ -41,14 +41,14 @@
     <template v-if="!loading && report">
 
       <!-- Summary Cards -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <AppCard>
           <div class="flex items-center gap-3">
             <div class="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center">
               <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
             </div>
             <div>
-              <p class="text-xs text-gray-500 font-medium uppercase tracking-wide">Total Order Void</p>
+              <p class="text-xs text-gray-500 font-medium uppercase tracking-wide">Void Transaksi</p>
               <p class="text-2xl font-bold text-gray-900">{{ report.summary.total_voided }}</p>
             </div>
           </div>
@@ -59,15 +59,53 @@
               <svg class="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
             </div>
             <div>
-              <p class="text-xs text-gray-500 font-medium uppercase tracking-wide">Total Nilai Void</p>
+              <p class="text-xs text-gray-500 font-medium uppercase tracking-wide">Nilai Void Transaksi</p>
               <p class="text-2xl font-bold text-gray-900">{{ formatRupiah(report.summary.total_amount) }}</p>
+            </div>
+          </div>
+        </AppCard>
+        <AppCard>
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-rose-100 flex items-center justify-center">
+              <svg class="w-5 h-5 text-rose-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+            </div>
+            <div>
+              <p class="text-xs text-gray-500 font-medium uppercase tracking-wide">Void Item</p>
+              <p class="text-2xl font-bold text-gray-900">{{ report.summary.item_voided }}</p>
+            </div>
+          </div>
+        </AppCard>
+        <AppCard>
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center">
+              <svg class="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            </div>
+            <div>
+              <p class="text-xs text-gray-500 font-medium uppercase tracking-wide">Nilai Void Item</p>
+              <p class="text-2xl font-bold text-gray-900">{{ formatRupiah(report.summary.item_amount) }}</p>
             </div>
           </div>
         </AppCard>
       </div>
 
-      <!-- Table -->
-      <AppCard>
+      <!-- Tab: Void Transaksi vs Void Item -->
+      <div class="flex gap-2">
+        <button
+          class="px-4 py-2 text-sm font-medium rounded-lg transition-colors"
+          :class="activeTab === 'order' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'"
+          @click="switchTab('order')">
+          Void Transaksi ({{ report.total }})
+        </button>
+        <button
+          class="px-4 py-2 text-sm font-medium rounded-lg transition-colors"
+          :class="activeTab === 'item' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'"
+          @click="switchTab('item')">
+          Void Item ({{ report.items_total }})
+        </button>
+      </div>
+
+      <!-- Table: Void Transaksi -->
+      <AppCard v-if="activeTab === 'order'">
         <div v-if="report.data.length === 0" class="text-center py-12 text-gray-400">
           <svg class="w-12 h-12 mx-auto mb-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
           <p class="font-medium">Tidak ada order void pada periode ini</p>
@@ -124,6 +162,62 @@
           </div>
         </div>
       </AppCard>
+
+      <!-- Table: Void Item (hapus item dari order belum bayar) -->
+      <AppCard v-else>
+        <div v-if="report.items.length === 0" class="text-center py-12 text-gray-400">
+          <svg class="w-12 h-12 mx-auto mb-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+          <p class="font-medium">Tidak ada void item pada periode ini</p>
+        </div>
+
+        <div v-else class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-gray-200">
+                <th class="text-left py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Waktu Void</th>
+                <th class="text-left py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Outlet</th>
+                <th class="text-left py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Meja</th>
+                <th class="text-left py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Item</th>
+                <th class="text-right py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Subtotal</th>
+                <th class="text-left py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Pemesan</th>
+                <th class="text-left py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Di-void oleh</th>
+                <th class="text-left py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Alasan</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+              <tr v-for="row in report.items" :key="row.id" class="hover:bg-gray-50">
+                <td class="py-3 px-3 text-gray-600 whitespace-nowrap">{{ fmtDateTime(row.voided_at) }}</td>
+                <td class="py-3 px-3 font-medium text-gray-800">{{ row.outlet_name || '—' }}</td>
+                <td class="py-3 px-3 text-gray-600">{{ row.table_number || '—' }}</td>
+                <td class="py-3 px-3">
+                  <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-700 rounded text-xs">
+                    {{ Number(row.qty) }}× {{ row.product_name }}
+                  </span>
+                </td>
+                <td class="py-3 px-3 text-right font-semibold text-red-600">{{ formatRupiah(row.subtotal) }}</td>
+                <td class="py-3 px-3 text-gray-600">{{ row.waiter_name || '—' }}</td>
+                <td class="py-3 px-3 text-gray-600">{{ row.voided_by || '—' }}</td>
+                <td class="py-3 px-3 text-gray-500 italic">{{ row.void_reason || '—' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination -->
+        <div v-if="report.items_total > report.limit" class="flex items-center justify-between pt-4 border-t border-gray-100 mt-4">
+          <p class="text-sm text-gray-500">
+            Menampilkan {{ (page-1)*report.limit + 1 }}–{{ Math.min(page*report.limit, report.items_total) }} dari {{ report.items_total }} data
+          </p>
+          <div class="flex gap-2">
+            <button :disabled="page <= 1"
+              class="px-3 py-1.5 text-sm border rounded-lg disabled:opacity-40 hover:bg-gray-50"
+              @click="page--; fetchReport()">← Prev</button>
+            <button :disabled="page * report.limit >= report.items_total"
+              class="px-3 py-1.5 text-sm border rounded-lg disabled:opacity-40 hover:bg-gray-50"
+              @click="page++; fetchReport()">Next →</button>
+          </div>
+        </div>
+      </AppCard>
     </template>
 
   </div>
@@ -146,6 +240,14 @@ const report        = ref(null)
 const loading       = ref(false)
 const errorMsg      = ref('')
 const page          = ref(1)
+const activeTab     = ref('order') // 'order' = void transaksi, 'item' = void item
+
+function switchTab(tab) {
+  if (activeTab.value === tab) return
+  activeTab.value = tab
+  page.value = 1
+  fetchReport()
+}
 
 onMounted(async () => {
   try {

@@ -125,6 +125,43 @@ func SaveCashierShift(outletID string, req models.PushCashierShiftRequest) (stri
 	return cloudID, nil
 }
 
+// SaveOrderItemVoid menyimpan audit void item (hapus item dari order belum bayar).
+// Idempotent: retry outbox app dengan local_id sama hanya meng-update baris yang ada.
+func SaveOrderItemVoid(outletID string, req models.PushOrderItemVoidRequest) (string, error) {
+	cloudID := NewULID()
+
+	err := database.DB.QueryRow(
+		`INSERT INTO order_item_voids (id, local_id, outlet_id, order_id, table_number,
+			product_name, category_id, qty, price, subtotal, waiter_name,
+			voided_by, void_reason, voided_at, created_at, synced_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW(), NOW())
+		ON CONFLICT (outlet_id, local_id) DO UPDATE SET
+			order_id = EXCLUDED.order_id,
+			table_number = EXCLUDED.table_number,
+			product_name = EXCLUDED.product_name,
+			category_id = EXCLUDED.category_id,
+			qty = EXCLUDED.qty,
+			price = EXCLUDED.price,
+			subtotal = EXCLUDED.subtotal,
+			waiter_name = EXCLUDED.waiter_name,
+			voided_by = EXCLUDED.voided_by,
+			void_reason = EXCLUDED.void_reason,
+			voided_at = EXCLUDED.voided_at,
+			synced_at = NOW()
+		RETURNING id`,
+		cloudID, req.LocalID, outletID, req.OrderID, req.TableNumber,
+		req.ProductName, req.CategoryID, req.Qty, req.Price, req.Subtotal,
+		req.WaiterName, req.VoidedBy, req.VoidReason, parseTime(req.VoidedAt),
+	).Scan(&cloudID)
+
+	if err != nil {
+		return "", err
+	}
+
+	go logSync(outletID, "push_order_item_void", "order_item_void", 1, "success", "")
+	return cloudID, nil
+}
+
 func SaveCashMovement(outletID string, req models.PushCashMovementRequest) (string, error) {
 	cloudID := req.LocalID
 	if cloudID == "" {
@@ -384,6 +421,24 @@ func ProcessBatchSync(outletID string, req models.BatchSyncRequest) models.Batch
 			} else {
 				result.LocalID = shiftReq.LocalID
 				if cloudID, err := SaveCashierShift(outletID, shiftReq); err != nil {
+					result.Status = "failed"
+					result.Error = err.Error()
+					resp.Failed++
+				} else {
+					result.CloudID = cloudID
+					resp.Success++
+				}
+			}
+
+		case "order_item_void":
+			var voidReq models.PushOrderItemVoidRequest
+			if err := json.Unmarshal(dataBytes, &voidReq); err != nil {
+				result.Status = "failed"
+				result.Error = "Invalid order_item_void data: " + err.Error()
+				resp.Failed++
+			} else {
+				result.LocalID = voidReq.LocalID
+				if cloudID, err := SaveOrderItemVoid(outletID, voidReq); err != nil {
 					result.Status = "failed"
 					result.Error = err.Error()
 					resp.Failed++

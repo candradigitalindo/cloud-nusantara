@@ -76,6 +76,38 @@ type PushOrderRequest struct {
 	UpdatedAt    string      `json:"updated_at"`
 }
 
+// PushOrderItemVoidRequest = payload entityType "order_item_void" dari app POS:
+// audit penghapusan satu item dari order yang belum dibayar (di-gate PIN Manager/SVP).
+type PushOrderItemVoidRequest struct {
+	LocalID     string  `json:"local_id"` // id item yang dihapus
+	OrderID     string  `json:"order_id"`
+	TableNumber string  `json:"table_number"`
+	ProductName string  `json:"product_name"`
+	CategoryID  string  `json:"category_id"`
+	Qty         float64 `json:"qty"`
+	Price       float64 `json:"price"`
+	Subtotal    float64 `json:"subtotal"`
+	WaiterName  string  `json:"waiter_name"`
+	VoidedBy    string  `json:"voided_by"`
+	VoidReason  string  `json:"void_reason"`
+	VoidedAt    string  `json:"voided_at"`
+}
+
+type VoidItemRow struct {
+	ID          string  `json:"id"`
+	OutletName  string  `json:"outlet_name"`
+	OrderID     string  `json:"order_id"`
+	TableNumber string  `json:"table_number"`
+	ProductName string  `json:"product_name"`
+	Qty         float64 `json:"qty"`
+	Price       float64 `json:"price"`
+	Subtotal    float64 `json:"subtotal"`
+	WaiterName  string  `json:"waiter_name"`
+	VoidedBy    string  `json:"voided_by"`
+	VoidReason  string  `json:"void_reason"`
+	VoidedAt    string  `json:"voided_at"`
+}
+
 type VoidOrderRow struct {
 	ID           string  `json:"id"`
 	OutletName   string  `json:"outlet_name"`
@@ -90,16 +122,20 @@ type VoidOrderRow struct {
 }
 
 type VoidReportSummary struct {
-	TotalVoided int     `json:"total_voided"`
+	TotalVoided int     `json:"total_voided"` // jumlah void transaksi (order penuh)
 	TotalAmount float64 `json:"total_amount"`
+	ItemVoided  int     `json:"item_voided"` // jumlah void item (hapus item, order jalan terus)
+	ItemAmount  float64 `json:"item_amount"`
 }
 
 type VoidReport struct {
-	Summary VoidReportSummary `json:"summary"`
-	Data    []VoidOrderRow    `json:"data"`
-	Total   int               `json:"total"`
-	Page    int               `json:"page"`
-	Limit   int               `json:"limit"`
+	Summary    VoidReportSummary `json:"summary"`
+	Data       []VoidOrderRow    `json:"data"`
+	Items      []VoidItemRow     `json:"items"`
+	Total      int               `json:"total"`
+	ItemsTotal int               `json:"items_total"`
+	Page       int               `json:"page"`
+	Limit      int               `json:"limit"`
 }
 
 type CloudOrder struct {

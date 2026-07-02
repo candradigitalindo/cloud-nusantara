@@ -1530,12 +1530,92 @@ func GetVoidReport(dateFrom, dateTo, outletID string, scopeIDs []string, page, l
 		return nil, err
 	}
 
+	// ── Void item (hapus item dari order belum bayar) ──────────────────────
+	// Audit terpisah dari void transaksi: order tetap jalan, hanya item yang
+	// dihapus. Ditampilkan sebagai tab sendiri di laporan void.
+	iconds := []string{"v.voided_at IS NOT NULL"}
+	iargs := []interface{}{}
+	iidx := 1
+
+	if outletID != "" {
+		iconds = append(iconds, fmt.Sprintf("v.outlet_id = $%d", iidx))
+		iargs = append(iargs, outletID)
+		iidx++
+	} else if scopeIDs != nil {
+		iconds = append(iconds, fmt.Sprintf("v.outlet_id = ANY($%d::text[])", iidx))
+		iargs = append(iargs, pq.Array(scopeIDs))
+		iidx++
+	}
+	if dateFrom != "" {
+		iconds = append(iconds, fmt.Sprintf("v.voided_at >= $%d::timestamptz", iidx))
+		iargs = append(iargs, dateFrom+" 00:00:00")
+		iidx++
+	}
+	if dateTo != "" {
+		iconds = append(iconds, fmt.Sprintf("v.voided_at <= $%d::timestamptz", iidx))
+		iargs = append(iargs, dateTo+" 23:59:59")
+		iidx++
+	}
+
+	iwhere := "WHERE " + strings.Join(iconds, " AND ")
+
+	var itemTotal int
+	var itemAmount float64
+	if err := database.DB.QueryRow(fmt.Sprintf(
+		`SELECT COUNT(*), COALESCE(SUM(v.subtotal),0)
+		FROM order_item_voids v %s`, iwhere,
+	), iargs...).Scan(&itemTotal, &itemAmount); err != nil {
+		return nil, err
+	}
+
+	itemArgs := append(append([]interface{}{}, iargs...), limit, offset)
+	irows, err := database.DB.Query(fmt.Sprintf(
+		`SELECT v.id,
+			COALESCE(out.name,''),
+			COALESCE(v.order_id,''),
+			COALESCE(v.table_number,''),
+			COALESCE(v.product_name,''),
+			v.qty, v.price, v.subtotal,
+			COALESCE(v.waiter_name,''),
+			COALESCE(v.voided_by,''),
+			COALESCE(v.void_reason,''),
+			COALESCE(to_char(v.voided_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),'')
+		FROM order_item_voids v
+		LEFT JOIN outlets out ON out.id = v.outlet_id
+		%s
+		ORDER BY v.voided_at DESC
+		LIMIT $%d OFFSET $%d`, iwhere, iidx, iidx+1,
+	), itemArgs...)
+	if err != nil {
+		return nil, err
+	}
+	defer irows.Close()
+
+	items := make([]models.VoidItemRow, 0)
+	for irows.Next() {
+		var r models.VoidItemRow
+		if err := irows.Scan(&r.ID, &r.OutletName, &r.OrderID, &r.TableNumber,
+			&r.ProductName, &r.Qty, &r.Price, &r.Subtotal,
+			&r.WaiterName, &r.VoidedBy, &r.VoidReason, &r.VoidedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, r)
+	}
+	if err := irows.Err(); err != nil {
+		return nil, err
+	}
+
 	return &models.VoidReport{
-		Summary: models.VoidReportSummary{TotalVoided: total, TotalAmount: totalAmount},
-		Data:    data,
-		Total:   total,
-		Page:    page,
-		Limit:   limit,
+		Summary: models.VoidReportSummary{
+			TotalVoided: total, TotalAmount: totalAmount,
+			ItemVoided: itemTotal, ItemAmount: itemAmount,
+		},
+		Data:       data,
+		Items:      items,
+		Total:      total,
+		ItemsTotal: itemTotal,
+		Page:       page,
+		Limit:      limit,
 	}, nil
 }
 
