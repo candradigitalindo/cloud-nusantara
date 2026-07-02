@@ -30,6 +30,9 @@ func UploadFile(c *fiber.Ctx) error {
 	if !allowed[ext] {
 		return c.Status(400).JSON(models.APIResponse{Success: false, Error: "Format file tidak didukung. Gunakan JPG, PNG, PDF, atau WebP."})
 	}
+	if !sniffContentAllowed(file, "image/", "application/pdf") {
+		return c.Status(400).JSON(models.APIResponse{Success: false, Error: "Isi file tidak sesuai formatnya."})
+	}
 
 	// Ensure uploads directory exists
 	uploadDir := "uploads"

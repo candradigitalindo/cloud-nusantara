@@ -20,6 +20,9 @@ var productPhotoExt = map[string]bool{".jpg": true, ".jpeg": true, ".png": true,
 // prospective reservation customers can see the menu photos.
 func UploadProductPhoto(c *fiber.Ctx) error {
 	id := c.Params("id")
+	if !validateRowOutletAccess(c, "cloud_products", id) {
+		return c.Status(fiber.StatusForbidden).JSON(models.APIResponse{Success: false, Error: "Outlet di luar akses Anda"})
+	}
 
 	file, err := c.FormFile("file")
 	if err != nil {
@@ -31,6 +34,9 @@ func UploadProductPhoto(c *fiber.Ctx) error {
 	}
 	if file.Size > 10*1024*1024 {
 		return c.Status(400).JSON(models.APIResponse{Success: false, Error: "Ukuran foto maksimal 10MB"})
+	}
+	if !sniffContentAllowed(file, "image/") {
+		return c.Status(400).JSON(models.APIResponse{Success: false, Error: "Isi file bukan gambar"})
 	}
 
 	if err := os.MkdirAll(productPhotoDir, 0755); err != nil {

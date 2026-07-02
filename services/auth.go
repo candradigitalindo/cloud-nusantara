@@ -230,6 +230,24 @@ func GetAdmins() ([]models.CloudAdmin, error) {
 	return admins, rows.Err()
 }
 
+// GuardTargetAdmin menolak modifikasi akun ber-role superadmin oleh non-superadmin.
+// Tanpa ini, pemegang users.update bisa mereset password / menonaktifkan / menghapus
+// akun superadmin dan mengambil alih sistem.
+func GuardTargetAdmin(adminID, callerRole string) error {
+	var targetRole string
+	err := database.DB.QueryRow(`SELECT role FROM cloud_admins WHERE id = $1`, adminID).Scan(&targetRole)
+	if err == sql.ErrNoRows {
+		return fmt.Errorf("admin tidak ditemukan")
+	}
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(targetRole) == "superadmin" && callerRole != "superadmin" {
+		return fmt.Errorf("akun superadmin hanya dapat dikelola oleh superadmin")
+	}
+	return nil
+}
+
 func CreateAdmin(req models.CreateAdminRequest) (*models.CloudAdmin, error) {
 	if req.Username == "" || req.Password == "" || req.Name == "" {
 		return nil, fmt.Errorf("username, password, dan name wajib diisi")
@@ -239,6 +257,16 @@ func CreateAdmin(req models.CreateAdminRequest) (*models.CloudAdmin, error) {
 	}
 	if req.Role == "" {
 		req.Role = "admin"
+	}
+	// Role wajib terdaftar di tabel roles. "superadmin" bukan baris tabel (string
+	// bypass di middleware), jadi validasi ini sekaligus menutup pembuatan akun
+	// superadmin lewat API oleh pemegang users.create.
+	var roleExists bool
+	if err := database.DB.QueryRow(`SELECT EXISTS(SELECT 1 FROM roles WHERE name = $1)`, req.Role).Scan(&roleExists); err != nil {
+		return nil, err
+	}
+	if !roleExists {
+		return nil, fmt.Errorf("role '%s' tidak valid", req.Role)
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
@@ -689,6 +717,12 @@ func UpdateRole(currentName string, req models.UpdateRoleRequest) (*models.Role,
 	newName := strings.TrimSpace(req.Name)
 	if newName == "" {
 		return nil, fmt.Errorf("nama role wajib diisi")
+	}
+	// "superadmin" bukan baris tabel roles, jadi cek duplikat di bawah tidak
+	// menangkapnya — tanpa guard ini rename role custom → superadmin mem-promote
+	// semua penggunanya jadi full bypass.
+	if strings.ToLower(newName) == "superadmin" {
+		return nil, fmt.Errorf("nama role tidak diizinkan")
 	}
 
 	// If renaming, check for conflicts

@@ -33,6 +33,9 @@ func CreateAsset(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(models.APIResponse{Success: false, Error: "Format data tidak valid"})
 	}
+	if !validateOutletAccess(c, req.OutletID) {
+		return c.Status(fiber.StatusForbidden).JSON(models.APIResponse{Success: false, Error: "Outlet di luar akses Anda"})
+	}
 	a, err := services.CreateAsset(req)
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(models.APIResponse{Success: false, Error: err.Error()})

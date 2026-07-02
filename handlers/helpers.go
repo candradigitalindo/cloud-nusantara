@@ -4,12 +4,34 @@ import (
 	"cloud-pos/database"
 	"cloud-pos/services"
 	"fmt"
+	"mime/multipart"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 )
+
+// sniffContentAllowed memeriksa isi file (magic bytes) — ekstensi saja mudah
+// dipalsukan; file yang tersimpan disajikan balik dari /uploads (publik).
+// allowed = prefix MIME hasil http.DetectContentType (mis. "image/", "application/pdf").
+func sniffContentAllowed(fh *multipart.FileHeader, allowed ...string) bool {
+	f, err := fh.Open()
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	buf := make([]byte, 512)
+	n, _ := f.Read(buf)
+	ct := http.DetectContentType(buf[:n])
+	for _, a := range allowed {
+		if strings.HasPrefix(ct, a) {
+			return true
+		}
+	}
+	return false
+}
 
 // clientIP returns the real client IP, honouring Cloudflare / reverse-proxy headers.
 func clientIP(c *fiber.Ctx) string {
@@ -109,6 +131,21 @@ func getWorkUnitScope(c *fiber.Ctx) []string {
 		return []string{scopeNoneSentinel}
 	}
 	return ids
+}
+
+// validateRowOutletAccess memeriksa scope outlet terhadap outlet_id milik baris tabel
+// (untuk endpoint update/delete by id yang tidak membawa outlet_id di body).
+// Baris tidak ditemukan → true, biarkan service yang mengembalikan "tidak ditemukan".
+func validateRowOutletAccess(c *fiber.Ctx, table, id string) bool {
+	ids := getOutletScope(c)
+	if ids == nil {
+		return true
+	}
+	var outletID string
+	if err := database.DB.QueryRow(`SELECT outlet_id FROM `+table+` WHERE id = $1`, id).Scan(&outletID); err != nil {
+		return true
+	}
+	return validateOutletAccess(c, strings.TrimSpace(outletID))
 }
 
 // validateOutletAccess checks if the given outletID is accessible under the current scope.

@@ -247,6 +247,9 @@ func CreateAdjustment(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(models.APIResponse{Error: "body tidak valid"})
 	}
+	if !services.WarehouseMutableInScope(req.WarehouseID, getOutletScope(c)) {
+		return c.Status(403).JSON(models.APIResponse{Error: "Akses gudang tidak diizinkan"})
+	}
 	actor, _ := c.Locals("admin_username").(string)
 	if err := services.CreateAdjustment(req, actor); err != nil {
 		return c.Status(400).JSON(models.APIResponse{Error: err.Error()})
@@ -293,6 +296,10 @@ func CreateStockTransfer(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(models.APIResponse{Error: "body tidak valid"})
 	}
+	scope := getOutletScope(c)
+	if !services.WarehouseMutableInScope(req.FromWarehouseID, scope) || !services.WarehouseMutableInScope(req.ToWarehouseID, scope) {
+		return c.Status(403).JSON(models.APIResponse{Error: "Akses gudang tidak diizinkan"})
+	}
 	actor, _ := c.Locals("admin_username").(string)
 	t, err := services.CreateStockTransfer(req, actor)
 	if err != nil {
@@ -308,6 +315,9 @@ func UpdateTransferStatus(c *fiber.Ctx) error {
 	}
 	if err := c.BodyParser(&body); err != nil {
 		return c.Status(400).JSON(models.APIResponse{Error: "body tidak valid"})
+	}
+	if !services.TransferInScope(c.Params("id"), getOutletScope(c)) {
+		return c.Status(403).JSON(models.APIResponse{Error: "Akses transfer tidak diizinkan"})
 	}
 	actor, _ := c.Locals("admin_username").(string)
 	t, err := services.UpdateTransferStatus(c.Params("id"), body.Status, actor)
@@ -326,6 +336,9 @@ func UpdateReceivedQty(c *fiber.Ctx) error {
 	}
 	if err := c.BodyParser(&body); err != nil {
 		return c.Status(400).JSON(models.APIResponse{Error: "body tidak valid"})
+	}
+	if !services.TransferInScope(transferID, getOutletScope(c)) {
+		return c.Status(403).JSON(models.APIResponse{Error: "Akses transfer tidak diizinkan"})
 	}
 	if err := services.UpdateTransferReceivedQty(transferID, itemID, body.ReceivedQtyBase); err != nil {
 		return c.Status(400).JSON(models.APIResponse{Error: err.Error()})
@@ -469,6 +482,9 @@ func CreateStockWaste(c *fiber.Ctx) error {
 	var req models.StockWasteRequest
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(models.APIResponse{Error: "body tidak valid"})
+	}
+	if !services.WarehouseMutableInScope(req.WarehouseID, getOutletScope(c)) {
+		return c.Status(403).JSON(models.APIResponse{Error: "Akses gudang tidak diizinkan"})
 	}
 	actor, _ := c.Locals("admin_username").(string)
 	if err := services.CreateStockWaste(req, actor); err != nil {

@@ -23,8 +23,8 @@ func Setup(app *fiber.App, cfg *config.Config) {
 	api.Get("/ping", handlers.Ping)
 	api.Get("/timezone", handlers.GetTimezone) // public — used by frontend for time formatting
 
-	// Public reservation (no auth) — per-outlet by slug
-	public := api.Group("/public")
+	// Public reservation (no auth) — per-outlet by slug, dibatasi per IP
+	public := api.Group("/public", middleware.PublicRateLimiter())
 	public.Get("/outlets/:slug/menu", handlers.PublicGetMenu)
 	public.Post("/outlets/:slug/reservations", handlers.PublicCreateReservation)
 
@@ -83,7 +83,7 @@ func Setup(app *fiber.App, cfg *config.Config) {
 	outlet.Get("/sync/logs", handlers.GetSyncLogs)
 
 	// Admin login (public — no auth required)
-	api.Post("/admin/login", handlers.AdminLogin(cfg))
+	api.Post("/admin/login", middleware.LoginRateLimiter(), handlers.AdminLogin(cfg))
 
 	// Admin API (authenticated by admin token or JWT)
 	admin := api.Group("/admin", middleware.AdminAuth(cfg))
@@ -185,8 +185,8 @@ func Setup(app *fiber.App, cfg *config.Config) {
 	admin.Put("/purchase-requests/:id/items", middleware.RequirePermission("procurement.requests.view"), handlers.UpdatePurchaseItems)
 	admin.Delete("/purchase-requests/:id", middleware.RequirePermission("procurement.requests.submit"), handlers.DeletePurchaseRequest)
 
-	// File upload
-	admin.Post("/upload", handlers.UploadFile)
+	// File upload — dipakai untuk bukti pembayaran pengadaan
+	admin.Post("/upload", middleware.RequireAnyPermission("finance.payments.view", "procurement.requests.view"), handlers.UploadFile)
 
 	// Bank Accounts
 	admin.Get("/bank-accounts", middleware.RequirePermission("finance.bank.view"), handlers.ListBankAccounts)

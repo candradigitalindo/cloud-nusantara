@@ -6,6 +6,8 @@ import (
 	"cloud-pos/models"
 	"cloud-pos/services"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -136,11 +138,65 @@ func AdminAuth(cfg *config.Config) fiber.Handler {
 	}
 }
 
-func RateLimiter(cfg *config.Config) fiber.Handler {
+// rateBucket menghitung request per klien dalam satu jendela waktu (fixed window).
+type rateBucket struct {
+	count       int
+	windowStart time.Time
+}
+
+type rateLimiterStore struct {
+	mu      sync.Mutex
+	buckets map[string]*rateBucket
+}
+
+// allow mengembalikan false bila key sudah melebihi max request dalam jendela window.
+func (s *rateLimiterStore) allow(key string, max int, window time.Duration) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now()
+	b, ok := s.buckets[key]
+	if !ok || now.Sub(b.windowStart) >= window {
+		// Sapu bucket kedaluwarsa saat map membesar agar memori tidak tumbuh tanpa batas.
+		if len(s.buckets) > 10000 {
+			for k, v := range s.buckets {
+				if now.Sub(v.windowStart) >= window {
+					delete(s.buckets, k)
+				}
+			}
+		}
+		s.buckets[key] = &rateBucket{count: 1, windowStart: now}
+		return true
+	}
+	b.count++
+	return b.count <= max
+}
+
+func newRateLimitHandler(name string, max int, window time.Duration) fiber.Handler {
+	store := &rateLimiterStore{buckets: map[string]*rateBucket{}}
 	return func(c *fiber.Ctx) error {
-		// TODO: implement rate limiting with Redis or in-memory store
+		if !store.allow(name+"|"+c.IP(), max, window) {
+			return c.Status(fiber.StatusTooManyRequests).JSON(models.APIResponse{
+				Success: false, Error: "Terlalu banyak permintaan, coba lagi sebentar lagi.",
+			})
+		}
 		return c.Next()
 	}
+}
+
+// RateLimiter membatasi request per IP untuk grup outlet API (sync device rutin,
+// jadi batasnya longgar — pagar terhadap loop liar, bukan throttle lalu lintas normal).
+func RateLimiter(cfg *config.Config) fiber.Handler {
+	return newRateLimitHandler("outlet", 600, time.Minute)
+}
+
+// LoginRateLimiter membatasi percobaan login per IP (anti brute-force password).
+func LoginRateLimiter() fiber.Handler {
+	return newRateLimitHandler("login", 10, time.Minute)
+}
+
+// PublicRateLimiter membatasi endpoint publik tanpa auth (booking reservasi dll).
+func PublicRateLimiter() fiber.Handler {
+	return newRateLimitHandler("public", 30, time.Minute)
 }
 
 // RequirePermission checks if the authenticated admin's role has a specific permission.

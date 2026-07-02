@@ -50,6 +50,20 @@ func CreateWorkUnit(c *fiber.Ctx) error {
 
 func GetWorkUnit(c *fiber.Ctx) error {
 	id := c.Params("id")
+	if wuScope := getWorkUnitScope(c); wuScope != nil {
+		allowed := false
+		for _, wid := range wuScope {
+			if wid == id {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return c.Status(fiber.StatusForbidden).JSON(models.APIResponse{
+				Success: false, Error: "Akses unit kerja tidak diizinkan",
+			})
+		}
+	}
 	wu, err := services.GetWorkUnit(id)
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.APIResponse{

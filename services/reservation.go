@@ -130,6 +130,11 @@ func saveReservation(id string, req models.ReservationRequest, source string) (*
 	if req.OutletID == "" {
 		return nil, fmt.Errorf("outlet wajib dipilih")
 	}
+	// Endpoint publik tanpa auth: batasi jumlah item agar satu request tidak bisa
+	// memicu ribuan lookup produk (resolveReservationItems query per item).
+	if len(req.Items) > 100 {
+		return nil, fmt.Errorf("jumlah item reservasi maksimal 100")
+	}
 	if req.Pax <= 0 {
 		req.Pax = 1
 	}
@@ -167,6 +172,18 @@ func saveReservation(id string, req models.ReservationRequest, source string) (*
 }
 
 func CreateReservation(req models.ReservationRequest, outletScope []string) (*models.Reservation, error) {
+	if outletScope != nil {
+		allowed := false
+		for _, id := range outletScope {
+			if id == req.OutletID {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return nil, fmt.Errorf("outlet di luar akses Anda")
+		}
+	}
 	return saveReservation("", req, "admin")
 }
 

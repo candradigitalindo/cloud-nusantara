@@ -108,6 +108,9 @@ func AdminCreateProduct(c *fiber.Ctx) error {
 	if req.OutletID == "" || req.Name == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(models.APIResponse{Success: false, Error: "outlet_id dan name wajib diisi"})
 	}
+	if !validateOutletAccess(c, req.OutletID) {
+		return c.Status(fiber.StatusForbidden).JSON(models.APIResponse{Success: false, Error: "Outlet di luar akses Anda"})
+	}
 	p, err := services.AdminCreateProduct(req)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{Success: false, Error: err.Error()})
@@ -124,6 +127,9 @@ func AdminUpdateProduct(c *fiber.Ctx) error {
 	if req.Name == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(models.APIResponse{Success: false, Error: "name wajib diisi"})
 	}
+	if !validateRowOutletAccess(c, "cloud_products", id) {
+		return c.Status(fiber.StatusForbidden).JSON(models.APIResponse{Success: false, Error: "Outlet di luar akses Anda"})
+	}
 	if err := services.AdminUpdateProduct(id, req); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{Success: false, Error: err.Error()})
 	}
@@ -132,6 +138,9 @@ func AdminUpdateProduct(c *fiber.Ctx) error {
 
 func AdminDeleteProduct(c *fiber.Ctx) error {
 	id := c.Params("id")
+	if !validateRowOutletAccess(c, "cloud_products", id) {
+		return c.Status(fiber.StatusForbidden).JSON(models.APIResponse{Success: false, Error: "Outlet di luar akses Anda"})
+	}
 	if err := services.AdminDeleteProduct(id); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{Success: false, Error: err.Error()})
 	}
@@ -145,6 +154,9 @@ func AdminCreateCategory(c *fiber.Ctx) error {
 	}
 	if req.OutletID == "" || req.Name == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(models.APIResponse{Success: false, Error: "outlet_id dan name wajib diisi"})
+	}
+	if !validateOutletAccess(c, req.OutletID) {
+		return c.Status(fiber.StatusForbidden).JSON(models.APIResponse{Success: false, Error: "Outlet di luar akses Anda"})
 	}
 	cat, err := services.AdminCreateCategory(req)
 	if err != nil {
@@ -162,6 +174,9 @@ func AdminUpdateCategory(c *fiber.Ctx) error {
 	if req.Name == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(models.APIResponse{Success: false, Error: "name wajib diisi"})
 	}
+	if !validateRowOutletAccess(c, "cloud_categories", id) {
+		return c.Status(fiber.StatusForbidden).JSON(models.APIResponse{Success: false, Error: "Outlet di luar akses Anda"})
+	}
 	if err := services.AdminUpdateCategory(id, req); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{Success: false, Error: err.Error()})
 	}
@@ -170,6 +185,9 @@ func AdminUpdateCategory(c *fiber.Ctx) error {
 
 func AdminDeleteCategory(c *fiber.Ctx) error {
 	id := c.Params("id")
+	if !validateRowOutletAccess(c, "cloud_categories", id) {
+		return c.Status(fiber.StatusForbidden).JSON(models.APIResponse{Success: false, Error: "Outlet di luar akses Anda"})
+	}
 	if err := services.AdminDeleteCategory(id); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{Success: false, Error: err.Error()})
 	}
@@ -219,6 +237,20 @@ func CreateAdmin(c *fiber.Ctx) error {
 	})
 }
 
+// guardTargetAdmin memblokir modifikasi akun superadmin oleh non-superadmin,
+// mengembalikan response 403 bila ditolak (nil bila lolos).
+func guardTargetAdmin(c *fiber.Ctx, adminID string) error {
+	callerRole, _ := c.Locals("admin_role").(string)
+	if err := services.GuardTargetAdmin(adminID, callerRole); err != nil {
+		status := fiber.StatusForbidden
+		if strings.Contains(err.Error(), "tidak ditemukan") {
+			status = fiber.StatusNotFound
+		}
+		return c.Status(status).JSON(models.APIResponse{Success: false, Error: err.Error()})
+	}
+	return nil
+}
+
 func UpdateAdminRole(c *fiber.Ctx) error {
 	adminID := c.Params("id")
 	var req models.UpdateAdminRoleRequest
@@ -226,6 +258,9 @@ func UpdateAdminRole(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
 			Success: false, Error: "Invalid request body",
 		})
+	}
+	if resp := guardTargetAdmin(c, adminID); resp != nil {
+		return resp
 	}
 
 	admin, err := services.UpdateAdminRole(adminID, req)
@@ -257,6 +292,9 @@ func UpdateAdmin(c *fiber.Ctx) error {
 			Success: false, Error: "Invalid request body",
 		})
 	}
+	if resp := guardTargetAdmin(c, adminID); resp != nil {
+		return resp
+	}
 
 	admin, err := services.UpdateAdmin(adminID, req)
 	if err != nil {
@@ -285,6 +323,9 @@ func ResetAdminPassword(c *fiber.Ctx) error {
 			Success: false, Error: "Invalid request body",
 		})
 	}
+	if resp := guardTargetAdmin(c, adminID); resp != nil {
+		return resp
+	}
 
 	if err := services.ResetAdminPassword(adminID, req); err != nil {
 		status := fiber.StatusBadRequest
@@ -303,6 +344,9 @@ func ResetAdminPassword(c *fiber.Ctx) error {
 
 func ToggleAdminActive(c *fiber.Ctx) error {
 	adminID := c.Params("id")
+	if resp := guardTargetAdmin(c, adminID); resp != nil {
+		return resp
+	}
 	admin, err := services.ToggleAdminActive(adminID)
 	if err != nil {
 		status := fiber.StatusInternalServerError
@@ -325,6 +369,9 @@ func ToggleAdminActive(c *fiber.Ctx) error {
 
 func DeleteAdmin(c *fiber.Ctx) error {
 	adminID := c.Params("id")
+	if resp := guardTargetAdmin(c, adminID); resp != nil {
+		return resp
+	}
 	if err := services.DeleteAdmin(adminID); err != nil {
 		status := fiber.StatusInternalServerError
 		if strings.Contains(err.Error(), "tidak ditemukan") {
