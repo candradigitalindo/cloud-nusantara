@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"strings"
 	"time"
 )
@@ -80,6 +81,7 @@ func SaveOrder(outletID string, req models.PushOrderRequest) (string, error) {
 	}
 
 	go logSync(outletID, "push_order", "order", 1, "success", "")
+	BroadcastSync("order", outletID)
 	return cloudID, nil
 }
 
@@ -222,6 +224,27 @@ func SaveTransaction(outletID string, req models.PushTransactionRequest) (string
 		}
 		lines = []models.PaymentLine{{PaymentMethod: method, Amount: req.TotalAmount}}
 	}
+	// Normalisasi kembalian: app mengirim nominal tunai yang DISERAHKAN pelanggan
+	// (mis. 50.000 untuk tagihan 30.800), sehingga total baris > total transaksi.
+	// Kurangi kelebihannya dari baris tunai agar rekap per-metode = pendapatan riil.
+	if req.TotalAmount > 0 {
+		var sum float64
+		for _, p := range lines {
+			sum += p.Amount
+		}
+		if excess := sum - req.TotalAmount; excess > 0.009 {
+			for i := range lines {
+				if strings.EqualFold(lines[i].PaymentMethod, "cash") {
+					cut := math.Min(excess, lines[i].Amount)
+					lines[i].Amount = round2(lines[i].Amount - cut)
+					excess -= cut
+					if excess <= 0.009 {
+						break
+					}
+				}
+			}
+		}
+	}
 	for _, p := range lines {
 		method := p.PaymentMethod
 		if method == "" {
@@ -242,6 +265,7 @@ func SaveTransaction(outletID string, req models.PushTransactionRequest) (string
 	}
 
 	go logSync(outletID, "push_transaction", "transaction", 1, "success", "")
+	BroadcastSync("transaction", outletID)
 
 	// Auto-deduct stok bahan baku via resep produk (lenient: gagal dicatat,
 	// transaksi tetap commit — selisih stok lebih baik daripada transaksi gagal sync).

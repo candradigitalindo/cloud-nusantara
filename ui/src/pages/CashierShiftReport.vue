@@ -22,15 +22,14 @@
 
     <!-- Filters -->
     <AppCard>
-      <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <SearchSelect v-model="filterOutlet" :options="outletFilterOptions" placeholder="Semua outlet" searchPlaceholder="Cari outlet…" @change="load" />
         <select v-model="filterStatus" @change="load" class="form-input">
           <option value="">Semua status</option>
           <option value="open">Berjalan</option>
           <option value="closed">Tutup</option>
         </select>
-        <input v-model="dateFrom" @change="load" type="date" class="form-input" />
-        <input v-model="dateTo" @change="load" type="date" class="form-input" />
+        <DateRangePicker v-model="range" clearable />
       </div>
     </AppCard>
 
@@ -59,7 +58,7 @@
             </div>
             <p class="text-xs text-gray-500">🟢 Buka {{ sh.opened_at || '—' }} · Kas awal {{ formatRupiah(sh.opening_cash) }}</p>
             <p class="text-xs text-gray-500" v-if="sh.status==='closed'">🔴 Tutup {{ sh.closed_at || '—' }} · Kas akhir {{ formatRupiah(sh.closing_cash) }}</p>
-            <p class="text-xs text-gray-600">Penjualan {{ formatRupiah(sh.sales_total) }} ({{ sh.sales_count }} trx) · Kas seharusnya {{ formatRupiah(sh.expected_cash) }}</p>
+            <p class="text-xs text-gray-600">Penjualan {{ formatRupiah(sh.sales_total) }} ({{ sh.sales_count }} trx)<span v-if="sh.sales_source === 'cloud'" class="text-sky-500"> ☁</span> · Kas seharusnya {{ formatRupiah(sh.expected_cash) }}</p>
             <p v-if="sh.cash_in || sh.cash_out" class="text-xs text-gray-500">↑ Masuk {{ formatRupiah(sh.cash_in) }} · ↓ Keluar {{ formatRupiah(sh.cash_out) }}</p>
           </li>
         </ul>
@@ -86,7 +85,10 @@
                 <td class="py-2.5 px-3 text-gray-500 text-xs">{{ sh.opened_at || '—' }}</td>
                 <td class="py-2.5 px-3 text-xs"><span v-if="sh.status==='open'" class="text-emerald-600 font-medium">Berjalan</span><span v-else class="text-gray-500">{{ sh.closed_at || '—' }}</span></td>
                 <td class="py-2.5 px-3 text-right">{{ formatRupiah(sh.opening_cash) }}</td>
-                <td class="py-2.5 px-3 text-right">{{ formatRupiah(sh.sales_total) }}</td>
+                <td class="py-2.5 px-3 text-right">
+                  {{ formatRupiah(sh.sales_total) }}
+                  <span v-if="sh.sales_source === 'cloud'" class="text-sky-500 cursor-help" title="Dihitung dari transaksi yang tersinkron ke cloud — laporan tutup kasir dari device belum diterima">☁</span>
+                </td>
                 <td class="py-2.5 px-3 text-right">{{ formatRupiah(sh.expected_cash) }}</td>
                 <td class="py-2.5 px-3 text-right">{{ sh.status==='closed' ? formatRupiah(sh.closing_cash) : '—' }}</td>
                 <td class="py-2.5 px-3 text-right"><span class="vbadge" :class="varCls(sh)">{{ varLabel(sh) }}</span></td>
@@ -146,7 +148,10 @@
 
         <!-- Per method -->
         <div class="rounded-xl border border-gray-200 overflow-hidden">
-          <div class="px-3 py-2 bg-gray-50 text-xs font-semibold text-gray-600">Penjualan per Metode ({{ active.sales_count }} trx · {{ formatRupiah(active.sales_total) }})</div>
+          <div class="px-3 py-2 bg-gray-50 text-xs font-semibold text-gray-600 flex items-center justify-between gap-2">
+            <span>Penjualan per Metode ({{ active.sales_count }} trx · {{ formatRupiah(active.sales_total) }})</span>
+            <span v-if="active.sales_source === 'cloud'" class="font-normal normal-case text-sky-600">☁ dari transaksi cloud</span>
+          </div>
           <div class="p-3 grid grid-cols-2 gap-2 text-sm">
             <div v-for="m in ['cash','qris','card','transfer']" :key="m" class="flex justify-between">
               <span class="text-gray-500 capitalize">{{ m }}</span>
@@ -154,6 +159,7 @@
             </div>
           </div>
         </div>
+        <p v-if="active.sales_source === 'cloud'" class="text-xs text-sky-600">☁ Penjualan dihitung dari transaksi yang tersinkron ke cloud karena laporan tutup kasir dari perangkat belum/tidak diterima. Angka bisa lebih kecil dari struk bila ada transaksi yang belum tersinkron.</p>
         <p v-if="active.notes" class="text-xs text-gray-500">Catatan: {{ active.notes }}</p>
       </div>
     </AppModal>
@@ -161,7 +167,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { cashierShiftsApi } from '@/api/cashierShifts.js'
 import { outletsApi } from '@/api/outlets.js'
 import { formatRupiah } from '@/utils/format.js'
@@ -169,6 +175,8 @@ import AppCard from '@/components/ui/AppCard.vue'
 import AppAlert from '@/components/ui/AppAlert.vue'
 import AppModal from '@/components/ui/AppModal.vue'
 import SearchSelect from '@/components/ui/SearchSelect.vue'
+import DateRangePicker from '@/components/ui/DateRangePicker.vue'
+import { useRealtime } from '@/utils/realtime.js'
 
 const report = ref(null)
 const outlets = ref([])
@@ -176,21 +184,36 @@ const loading = ref(false)
 const errorMsg = ref('')
 const filterOutlet = ref('')
 const filterStatus = ref('')
-const dateFrom = ref('')
-const dateTo = ref('')
+// Default "Hari Ini" (timezone aplikasi) — konsisten dengan halaman laporan lain.
+const APP_TZ = localStorage.getItem('cloud_pos_timezone') || 'Asia/Jakarta'
+const _today = new Date().toLocaleDateString('en-CA', { timeZone: APP_TZ })
+const dateFrom = ref(_today)
+const dateTo = ref(_today)
+const range = ref({ from: _today, to: _today, label: 'Hari Ini' })
+watch(range, (r) => { dateFrom.value = r.from; dateTo.value = r.to; load() })
+// Auto-refresh: shift buka/tutup, kas masuk/keluar, dan transaksi baru (omzet ☁ live).
+useRealtime(['cashier_shift', 'cash_movement', 'transaction'], load)
 
 const detailOpen = ref(false)
 const active = ref(null)
 
 const outletFilterOptions = computed(() => [{ id: '', name: 'Semua outlet' }, ...outlets.value])
 
+// Shift "open" lebih dari 18 jam hampir pasti sudah ditutup di device tapi
+// sinkronisasi tutupnya belum sampai (device offline) — beri label berbeda
+// supaya tidak terbaca seolah kasir masih berjalan.
+function isStale(sh) {
+  if (sh.status === 'closed' || !sh.opened_at) return false
+  const opened = new Date(sh.opened_at.replace(' ', 'T'))
+  return !isNaN(opened) && (Date.now() - opened.getTime()) > 18 * 3600 * 1000
+}
 function varCls(sh) {
-  if (sh.status !== 'closed') return 'v-open'
+  if (sh.status !== 'closed') return isStale(sh) ? 'v-warn' : 'v-open'
   if (sh.balanced) return 'v-ok'
   return sh.variance < 0 ? 'v-bad' : 'v-warn'
 }
 function varLabel(sh) {
-  if (sh.status !== 'closed') return 'Berjalan'
+  if (sh.status !== 'closed') return isStale(sh) ? 'Belum Sinkron' : 'Berjalan'
   if (sh.balanced) return 'Balance ✓'
   return (sh.variance < 0 ? 'Kurang ' : 'Lebih ') + formatRupiah(Math.abs(sh.variance))
 }

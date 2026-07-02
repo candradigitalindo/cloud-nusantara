@@ -42,8 +42,9 @@ type CashierShift struct {
 	ExpectedCash    float64                     `json:"expected_cash"` // kas seharusnya
 	ByMethod        map[string]ShiftMethodTotal `json:"by_method"`
 	Movements       []CashMovement              `json:"movements"` // rincian kas masuk/keluar
-	Variance        float64                     `json:"variance"`  // closing_cash - expected (selisih); + lebih, - kurang
-	Balanced        bool                        `json:"balanced"`  // true bila shift tertutup & selisih = 0
+	Variance        float64                     `json:"variance"`     // closing_cash - expected (selisih); + lebih, - kurang
+	Balanced        bool                        `json:"balanced"`     // true bila shift tertutup & selisih = 0
+	SalesSource     string                      `json:"sales_source"` // "device" (report tutup kasir) | "cloud" (dihitung dari transaksi tersinkron)
 	CreatedAt       time.Time                   `json:"created_at"`
 }
 

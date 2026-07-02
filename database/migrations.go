@@ -1403,6 +1403,42 @@ func RunMigrations() error {
 		}
 	}
 
+	// ── Backfill sekali: normalisasi kembalian di transaction_payments ─────
+	// App lama mengirim nominal tunai yang diserahkan pelanggan (termasuk
+	// kembalian) sebagai baris pembayaran, menggelembungkan rekap tunai.
+	// Kurangi kelebihan (sum(pembayaran) − total transaksi) dari baris tunai.
+	// Save-path baru sudah menormalisasi, jadi cukup sekali untuk data lama.
+	{
+		var done bool
+		DB.QueryRow(`SELECT EXISTS(SELECT 1 FROM app_settings WHERE key='tp_change_normalized')`).Scan(&done)
+		if !done {
+			res, err := DB.Exec(`
+				WITH ex AS (
+					SELECT tp.transaction_id, SUM(tp.amount) - MAX(t.total_amount) AS excess
+					FROM transaction_payments tp
+					JOIN cloud_transactions t ON t.id = tp.transaction_id
+					WHERE t.total_amount > 0
+					GROUP BY tp.transaction_id
+					HAVING SUM(tp.amount) > MAX(t.total_amount) + 0.01
+				)
+				UPDATE transaction_payments tp
+				SET amount = GREATEST(0, tp.amount - ex.excess)
+				FROM ex
+				WHERE tp.transaction_id = ex.transaction_id
+				  AND lower(tp.payment_method) = 'cash'
+				  AND tp.id = (SELECT MIN(tp2.id) FROM transaction_payments tp2
+					WHERE tp2.transaction_id = ex.transaction_id AND lower(tp2.payment_method) = 'cash')`)
+			if err != nil {
+				log.Printf("Backfill kembalian transaction_payments skipped: %v", err)
+			} else {
+				n, _ := res.RowsAffected()
+				DB.Exec(`INSERT INTO app_settings (key, value) VALUES ('tp_change_normalized','true')
+					ON CONFLICT (key) DO UPDATE SET value = 'true'`)
+				log.Printf("Backfill kembalian transaction_payments: %d baris dinormalisasi", n)
+			}
+		}
+	}
+
 	// Hak akses monitoring perangkat → superadmin, teknisi, dan semua role manager%.
 	DB.Exec("INSERT INTO role_permissions (role, permission) VALUES ('superadmin', 'devices.view') ON CONFLICT DO NOTHING")
 	DB.Exec("INSERT INTO role_permissions (role, permission) VALUES ('teknisi', 'devices.view') ON CONFLICT DO NOTHING")

@@ -96,12 +96,107 @@ func GetCashierShiftReport(outletID, status, dateFrom, dateTo string, outletScop
 		sh.SalesTotal = rj.SalesTotal
 		sh.SalesCount = rj.SalesCount
 		sh.CashSales = sh.ByMethod["cash"].Total
+		sh.SalesSource = "device"
 		sh.Movements = []models.CashMovement{}
 		report.Shifts = append(report.Shifts, sh)
 		shiftIDs = append(shiftIDs, strings.TrimSpace(sh.ID))
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+
+	// Fallback: report tutup kasir dikirim device SAAT tutup — shift yang masih
+	// berjalan atau yang tutupnya belum tersinkron tampil Rp 0 padahal transaksinya
+	// sudah ada di cloud. Hitung dari transaction_payments dalam jendela shift
+	// (buka → tutup / shift berikutnya / sekarang) untuk shift yang report-nya kosong.
+	needCloud := []string{}
+	for i := range report.Shifts {
+		if report.Shifts[i].SalesTotal == 0 {
+			needCloud = append(needCloud, strings.TrimSpace(report.Shifts[i].ID))
+		}
+	}
+	if len(needCloud) > 0 {
+		type cloudAgg struct {
+			byMethod map[string]models.ShiftMethodTotal
+			total    float64
+			count    int
+		}
+		aggs := map[string]*cloudAgg{}
+		crows, cErr := database.DB.Query(`
+			WITH win AS (
+				SELECT TRIM(s.id) AS sid, s.outlet_id, s.created_at AS t_from,
+					LEAST(
+						COALESCE((SELECT MIN(s2.created_at) FROM cloud_cashier_shifts s2
+							WHERE s2.outlet_id = s.outlet_id AND s2.created_at > s.created_at),
+							'infinity'::timestamp),
+						CASE WHEN s.status = 'closed' THEN s.updated_at ELSE (NOW() AT TIME ZONE 'UTC') END
+					) AS t_to
+				FROM cloud_cashier_shifts s WHERE TRIM(s.id) = ANY($1::text[])
+			)
+			SELECT w.sid, COALESCE(tp.payment_method,'other'),
+				COALESCE(SUM(tp.amount),0), COUNT(DISTINCT t.id)
+			FROM win w
+			JOIN cloud_transactions t ON t.outlet_id = w.outlet_id
+				AND t.created_at >= w.t_from AND t.created_at < w.t_to
+			JOIN transaction_payments tp ON tp.transaction_id = t.id
+			GROUP BY w.sid, tp.payment_method`, pq.Array(needCloud))
+		if cErr == nil {
+			defer crows.Close()
+			for crows.Next() {
+				var sid, method string
+				var amt float64
+				var cnt int
+				if crows.Scan(&sid, &method, &amt, &cnt) == nil {
+					a := aggs[sid]
+					if a == nil {
+						a = &cloudAgg{byMethod: map[string]models.ShiftMethodTotal{}}
+						aggs[sid] = a
+					}
+					a.byMethod[method] = models.ShiftMethodTotal{Count: cnt, Total: amt}
+					a.total += amt
+				}
+			}
+		}
+		// Jumlah transaksi dihitung distinct terpisah — split bill (2 metode)
+		// tidak boleh terhitung dua kali.
+		cntRows, cntErr := database.DB.Query(`
+			WITH win AS (
+				SELECT TRIM(s.id) AS sid, s.outlet_id, s.created_at AS t_from,
+					LEAST(
+						COALESCE((SELECT MIN(s2.created_at) FROM cloud_cashier_shifts s2
+							WHERE s2.outlet_id = s.outlet_id AND s2.created_at > s.created_at),
+							'infinity'::timestamp),
+						CASE WHEN s.status = 'closed' THEN s.updated_at ELSE (NOW() AT TIME ZONE 'UTC') END
+					) AS t_to
+				FROM cloud_cashier_shifts s WHERE TRIM(s.id) = ANY($1::text[])
+			)
+			SELECT w.sid, COUNT(t.id)
+			FROM win w
+			JOIN cloud_transactions t ON t.outlet_id = w.outlet_id
+				AND t.created_at >= w.t_from AND t.created_at < w.t_to
+			GROUP BY w.sid`, pq.Array(needCloud))
+		if cntErr == nil {
+			defer cntRows.Close()
+			for cntRows.Next() {
+				var sid string
+				var cnt int
+				if cntRows.Scan(&sid, &cnt) == nil {
+					if a := aggs[sid]; a != nil {
+						a.count = cnt
+					}
+				}
+			}
+		}
+		for i := range report.Shifts {
+			sh := &report.Shifts[i]
+			if a := aggs[strings.TrimSpace(sh.ID)]; a != nil && sh.SalesTotal == 0 && a.total > 0 {
+				sh.ByMethod = a.byMethod
+				sh.SalesTotal = round2(a.total)
+				sh.SalesCount = a.count
+				sh.CashSales = a.byMethod["cash"].Total
+				sh.SalesSource = "cloud"
+			}
+		}
 	}
 
 	// Kas masuk (pendapatan tambahan) & kas keluar (pengeluaran) dari rincian movement.
