@@ -193,6 +193,12 @@ func DeleteOutlet(id string) error {
 	}
 	defer tx.Rollback()
 
+	// asset_maintenances tidak punya kolom outlet_id — bersihkan via aset outlet-nya
+	// sebelum barisnya sendiri ikut terhapus di loop bawah.
+	if _, err := tx.Exec(`DELETE FROM asset_maintenances WHERE asset_id IN (SELECT id FROM assets WHERE outlet_id = $1)`, strings.TrimSpace(id)); err != nil {
+		return fmt.Errorf("failed to delete asset maintenances: %w", err)
+	}
+
 	relatedTables := []string{
 		"cloud_cash_movements",
 		"cloud_cashier_shifts",
@@ -200,10 +206,14 @@ func DeleteOutlet(id string) error {
 		"sync_logs",
 		"cloud_analytics",
 		"cloud_printers",
+		"transaction_payments",
+		"order_item_voids",
 		"cloud_orders",
 		"cloud_transactions",
 		"cloud_products",
 		"cloud_categories",
+		"assets",
+		"reservations",
 	}
 	for _, table := range relatedTables {
 		_, err := tx.Exec(fmt.Sprintf("DELETE FROM %s WHERE outlet_id = $1", table), strings.TrimSpace(id))

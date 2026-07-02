@@ -29,7 +29,7 @@ const payNotVoided = ` AND NOT EXISTS (SELECT 1 FROM cloud_transactions vt JOIN 
 func paymentMethodTotals(dateFrom, dateTo string, filterIDs []string) (map[string]float64, error) {
 	q := `SELECT payment_method, COALESCE(SUM(amount), 0)
 		FROM transaction_payments
-		WHERE tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date` + payNotVoided
+		WHERE created_at >= tz_day_start($1::date) AND created_at < tz_day_start($2::date + 1)` + payNotVoided
 	args := []interface{}{dateFrom, dateTo}
 	if filterIDs != nil {
 		q += ` AND outlet_id = ANY($3::text[])`
@@ -76,7 +76,7 @@ func GetSalesReport(dateFrom, dateTo, outletID string, scopeIDs []string, page, 
 			COALESCE(SUM(total_amount), 0),
 			COALESCE(AVG(total_amount), 0)
 		FROM cloud_transactions
-		WHERE tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date` + txNotVoided("cloud_transactions")
+		WHERE created_at >= tz_day_start($1::date) AND created_at < tz_day_start($2::date + 1)` + txNotVoided("cloud_transactions")
 
 	args := []interface{}{dateFrom, dateTo}
 	if filterIDs != nil {
@@ -108,7 +108,7 @@ func GetSalesReport(dateFrom, dateTo, outletID string, scopeIDs []string, page, 
 		FROM cloud_orders
 		WHERE COALESCE(payment_info->>'payment_status','unpaid') NOT IN ('paid')
 		  AND NULLIF(payment_info->>'voided_at','') IS NULL
-		  AND tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date`
+		  AND created_at >= tz_day_start($1::date) AND created_at < tz_day_start($2::date + 1)`
 	unpaidArgs := []interface{}{dateFrom, dateTo}
 	if filterIDs != nil {
 		unpaidQuery += ` AND outlet_id = ANY($3::text[])`
@@ -130,7 +130,7 @@ func GetSalesReport(dateFrom, dateTo, outletID string, scopeIDs []string, page, 
 			COALESCE(SUM(total_amount), 0),
 			COALESCE(SUM(COALESCE((SELECT o2.pax FROM cloud_orders o2 WHERE o2.id = cloud_transactions.order_id LIMIT 1), 0)), 0)::int
 		FROM cloud_transactions
-		WHERE tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date` + txNotVoided("cloud_transactions")
+		WHERE created_at >= tz_day_start($1::date) AND created_at < tz_day_start($2::date + 1)` + txNotVoided("cloud_transactions")
 
 	dailyArgs := []interface{}{dateFrom, dateTo}
 	if filterIDs != nil {
@@ -160,7 +160,7 @@ func GetSalesReport(dateFrom, dateTo, outletID string, scopeIDs []string, page, 
 	methodDailyQuery := `
 		SELECT TO_CHAR(tz_date(created_at), 'YYYY-MM-DD') AS date, payment_method, COALESCE(SUM(amount), 0)
 		FROM transaction_payments
-		WHERE tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date` + payNotVoided
+		WHERE created_at >= tz_day_start($1::date) AND created_at < tz_day_start($2::date + 1)` + payNotVoided
 	if filterIDs != nil {
 		methodDailyQuery += ` AND outlet_id = ANY($3::text[])`
 	}
@@ -210,10 +210,10 @@ func GetSalesReport(dateFrom, dateTo, outletID string, scopeIDs []string, page, 
 			-- definisinya sama dengan ringkasan dan tidak salah kolom.
 			WHERE COALESCE(payment_info->>'payment_status','unpaid') NOT IN ('paid')
 			  AND NULLIF(payment_info->>'voided_at','') IS NULL
-			  AND tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date
+			  AND created_at >= tz_day_start($1::date) AND created_at < tz_day_start($2::date + 1)
 			GROUP BY outlet_id
 		) uq ON uq.outlet_id = t.outlet_id
-		WHERE tz_date(t.created_at) >= $1::date AND tz_date(t.created_at) <= $2::date` + txNotVoided("t")
+		WHERE t.created_at >= tz_day_start($1::date) AND t.created_at < tz_day_start($2::date + 1)` + txNotVoided("t")
 
 	outletArgs := []interface{}{dateFrom, dateTo}
 	if filterIDs != nil {
@@ -238,7 +238,7 @@ func GetSalesReport(dateFrom, dateTo, outletID string, scopeIDs []string, page, 
 	}
 
 	countQuery := `SELECT COUNT(*) FROM cloud_transactions
-		WHERE tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date` + txNotVoided("cloud_transactions")
+		WHERE created_at >= tz_day_start($1::date) AND created_at < tz_day_start($2::date + 1)` + txNotVoided("cloud_transactions")
 	countArgs := []interface{}{dateFrom, dateTo}
 	if filterIDs != nil {
 		countQuery += ` AND outlet_id = ANY($3::text[])`
@@ -275,7 +275,7 @@ func GetSalesReport(dateFrom, dateTo, outletID string, scopeIDs []string, page, 
 			TO_CHAR(t.created_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
 		FROM cloud_transactions t
 		LEFT JOIN outlets o ON o.id = t.outlet_id
-		WHERE tz_date(t.created_at) >= $1::date AND tz_date(t.created_at) <= $2::date` + txNotVoided("t")
+		WHERE t.created_at >= tz_day_start($1::date) AND t.created_at < tz_day_start($2::date + 1)` + txNotVoided("t")
 
 	txArgs := []interface{}{dateFrom, dateTo}
 	paramIdx := 3
@@ -307,7 +307,7 @@ func GetSalesReport(dateFrom, dateTo, outletID string, scopeIDs []string, page, 
 	return report, nil
 }
 
-func GetUnpaidOrders(outletID, status string, scopeIDs []string, page, limit int) (*models.UnpaidOrdersResponse, error) {
+func GetUnpaidOrders(outletID, status, dateFrom, dateTo string, scopeIDs []string, page, limit int) (*models.UnpaidOrdersResponse, error) {
 	report := &models.UnpaidOrdersResponse{
 		Page:  page,
 		Limit: limit,
@@ -333,6 +333,18 @@ func GetUnpaidOrders(outletID, status string, scopeIDs []string, page, limit int
 	if status != "" {
 		where += fmt.Sprintf(` AND o.status = $%d`, paramIdx)
 		args = append(args, status)
+		paramIdx++
+	}
+	// Filter tanggal opsional agar detail modal konsisten dengan kartu ringkasan
+	// SalesReport yang sudah date-filtered.
+	if dateFrom != "" {
+		where += fmt.Sprintf(` AND o.created_at >= tz_day_start($%d::date)`, paramIdx)
+		args = append(args, dateFrom)
+		paramIdx++
+	}
+	if dateTo != "" {
+		where += fmt.Sprintf(` AND o.created_at < tz_day_start($%d::date + 1)`, paramIdx)
+		args = append(args, dateTo)
 		paramIdx++
 	}
 
@@ -386,7 +398,7 @@ func GetUnpaidOrders(outletID, status string, scopeIDs []string, page, limit int
 }
 
 func GetProductSalesReport(dateFrom, dateTo, outletID string, scopeIDs []string) (*models.ProductSalesResponse, error) {
-	conds := []string{"tz_date(o.created_at) >= $1::date", "tz_date(o.created_at) <= $2::date"}
+	conds := []string{"o.created_at >= tz_day_start($1::date)", "o.created_at < tz_day_start($2::date + 1)"}
 	args := []interface{}{dateFrom, dateTo}
 	idx := 3
 
@@ -494,7 +506,7 @@ func GetTaxReport(dateFrom, dateTo, outletID string, scopeIDs []string) (*models
 	if err := database.DB.QueryRow(
 		`SELECT COUNT(*)::int, COALESCE(SUM(total_amount), 0), COALESCE(SUM(tax_amount), 0)
 		 FROM cloud_transactions
-		 WHERE tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date`+outletFilter,
+		 WHERE created_at >= tz_day_start($1::date) AND created_at < tz_day_start($2::date + 1)`+outletFilter,
 		args...,
 	).Scan(&totalTx, &gross, &tax); err != nil {
 		return nil, err
@@ -514,7 +526,7 @@ func GetTaxReport(dateFrom, dateTo, outletID string, scopeIDs []string) (*models
 		`SELECT TO_CHAR(tz_date(created_at), 'YYYY-MM-DD'), COUNT(*)::int,
 			COALESCE(SUM(total_amount), 0), COALESCE(SUM(tax_amount), 0)
 		 FROM cloud_transactions
-		 WHERE tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date`+outletFilter+`
+		 WHERE created_at >= tz_day_start($1::date) AND created_at < tz_day_start($2::date + 1)`+outletFilter+`
 		 GROUP BY tz_date(created_at) ORDER BY tz_date(created_at) DESC`,
 		args...,
 	)
@@ -551,7 +563,7 @@ func GetTaxReport(dateFrom, dateTo, outletID string, scopeIDs []string) (*models
 			COALESCE(o.tax_rate, 0), COALESCE(o.tax_enabled, false)
 		 FROM cloud_transactions t
 		 LEFT JOIN outlets o ON o.id = t.outlet_id
-		 WHERE tz_date(t.created_at) >= $1::date AND tz_date(t.created_at) <= $2::date`+outletFilter2+`
+		 WHERE t.created_at >= tz_day_start($1::date) AND t.created_at < tz_day_start($2::date + 1)`+outletFilter2+`
 		 GROUP BY t.outlet_id, o.name, t.outlet_code, o.tax_rate, o.tax_enabled
 		 ORDER BY SUM(t.total_amount) DESC`,
 		outletArgs...,
@@ -612,7 +624,7 @@ func GetCashFlowReport(dateFrom, dateTo, outletID string, scopeIDs []string) (*m
 				0::float8 AS svc_payments,
 				0::float8 AS opex_payments
 			FROM cloud_transactions
-			WHERE tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date` + outletFilter + `
+			WHERE created_at >= tz_day_start($1::date) AND created_at < tz_day_start($2::date + 1)` + outletFilter + `
 
 			UNION ALL
 
@@ -624,7 +636,7 @@ func GetCashFlowReport(dateFrom, dateTo, outletID string, scopeIDs []string) (*m
 				0::float8,
 				CASE WHEN LOWER(movement_type) NOT IN ('masuk','in','income','pemasukan') THEN amount ELSE 0 END
 			FROM cloud_cash_movements
-			WHERE tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date` + outletFilter + `
+			WHERE created_at >= tz_day_start($1::date) AND created_at < tz_day_start($2::date + 1)` + outletFilter + `
 
 			UNION ALL
 
@@ -638,7 +650,7 @@ func GetCashFlowReport(dateFrom, dateTo, outletID string, scopeIDs []string) (*m
 			WHERE status IN ('partial','paid','received')
 			  AND paid_at IS NOT NULL
 			  AND split_status IS NULL
-			  AND tz_date(paid_at) >= $1::date AND tz_date(paid_at) <= $2::date` + outletFilter + `
+			  AND paid_at >= tz_day_start($1::date) AND paid_at < tz_day_start($2::date + 1)` + outletFilter + `
 		) sub
 		GROUP BY date
 		ORDER BY date DESC`
@@ -687,8 +699,39 @@ func GetCashFlowReport(dateFrom, dateTo, outletID string, scopeIDs []string) (*m
 	}, nil
 }
 
+// taxTotalsByOutlet menjumlahkan tax_amount riil per outlet untuk periode terpilih.
+// Menggantikan estimasi revenue × tarif global agar Neraca/P&L/Buku Besar selalu
+// rekonsil dengan Laporan Pajak (yang sudah per-transaksi/per-outlet).
+func taxTotalsByOutlet(dateFrom, dateTo string, filterIDs []string) (map[string]float64, float64) {
+	q := `SELECT outlet_id, COALESCE(SUM(tax_amount),0)
+		FROM cloud_transactions
+		WHERE created_at >= tz_day_start($1::date) AND created_at < tz_day_start($2::date + 1)`
+	args := []interface{}{dateFrom, dateTo}
+	if filterIDs != nil {
+		q += ` AND outlet_id = ANY($3::text[])`
+		args = append(args, pq.Array(filterIDs))
+	}
+	q += ` GROUP BY outlet_id`
+
+	byOutlet := map[string]float64{}
+	var total float64
+	rows, err := database.DB.Query(q, args...)
+	if err != nil {
+		return byOutlet, 0
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		var v float64
+		if rows.Scan(&id, &v) == nil {
+			byOutlet[strings.TrimSpace(id)] = v
+			total += v
+		}
+	}
+	return byOutlet, total
+}
+
 func GetBalanceReport(dateFrom, dateTo, outletID string, scopeIDs []string) (*models.BalanceResponse, error) {
-	taxRate := GetTaxRate()
 	round2 := func(v float64) float64 { return math.Round(v*100) / 100 }
 
 	// Normalize outlet filter
@@ -698,6 +741,8 @@ func GetBalanceReport(dateFrom, dateTo, outletID string, scopeIDs []string) (*mo
 	} else if scopeIDs != nil {
 		filterIDs = scopeIDs
 	}
+
+	taxByOutlet, taxTotal := taxTotalsByOutlet(dateFrom, dateTo, filterIDs)
 
 	args := []interface{}{dateFrom, dateTo}
 	outletWhere := ""
@@ -720,7 +765,7 @@ func GetBalanceReport(dateFrom, dateTo, outletID string, scopeIDs []string) (*mo
 		LEFT JOIN (
 			SELECT outlet_id, SUM(total_amount) AS total_revenue
 			FROM cloud_transactions
-			WHERE tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date
+			WHERE created_at >= tz_day_start($1::date) AND created_at < tz_day_start($2::date + 1)
 			GROUP BY outlet_id
 		) t ON t.outlet_id = o.id
 		LEFT JOIN (
@@ -728,7 +773,7 @@ func GetBalanceReport(dateFrom, dateTo, outletID string, scopeIDs []string) (*mo
 				SUM(CASE WHEN LOWER(movement_type) IN ('masuk','in','income','pemasukan') THEN amount ELSE 0 END) AS total_cash_in,
 				SUM(CASE WHEN LOWER(movement_type) NOT IN ('masuk','in','income','pemasukan') THEN amount ELSE 0 END) AS total_expense
 			FROM cloud_cash_movements
-			WHERE tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date
+			WHERE created_at >= tz_day_start($1::date) AND created_at < tz_day_start($2::date + 1)
 			GROUP BY outlet_id
 		) mv ON mv.outlet_id = o.id
 		LEFT JOIN (
@@ -736,6 +781,7 @@ func GetBalanceReport(dateFrom, dateTo, outletID string, scopeIDs []string) (*mo
 			FROM cloud_orders
 			WHERE COALESCE(payment_info->>'payment_status','unpaid') NOT IN ('paid')
 			  AND NULLIF(payment_info->>'voided_at','') IS NULL
+			  AND created_at >= tz_day_start($1::date) AND created_at < tz_day_start($2::date + 1)
 			GROUP BY outlet_id
 		) uq ON uq.outlet_id = o.id
 		LEFT JOIN (
@@ -744,7 +790,7 @@ func GetBalanceReport(dateFrom, dateTo, outletID string, scopeIDs []string) (*mo
 			WHERE status IN ('partial','paid','received')
 			  AND paid_at IS NOT NULL
 			  AND split_status IS NULL
-			  AND tz_date(paid_at) >= $1::date AND tz_date(paid_at) <= $2::date
+			  AND paid_at >= tz_day_start($1::date) AND paid_at < tz_day_start($2::date + 1)
 			GROUP BY outlet_id
 		) pr ON pr.outlet_id = o.id
 		LEFT JOIN (
@@ -778,7 +824,7 @@ func GetBalanceReport(dateFrom, dateTo, outletID string, scopeIDs []string) (*mo
 		r.Receivables = r.UnpaidAmount
 		r.TotalAssets = round2(r.CashAndEquivalents + r.Receivables)
 		// Kewajiban
-		r.TaxPayable = round2(r.TotalRevenue * taxRate)
+		r.TaxPayable = round2(taxByOutlet[strings.TrimSpace(r.OutletID)])
 		r.TotalLiabilities = round2(r.TaxPayable + r.AccountsPayable)
 		// Ekuitas = Aset - Kewajiban
 		r.TotalEquity = round2(r.TotalAssets - r.TotalLiabilities)
@@ -801,7 +847,7 @@ func GetBalanceReport(dateFrom, dateTo, outletID string, scopeIDs []string) (*mo
 		WHERE status IN ('partial','paid','received') AND paid_at IS NOT NULL
 		  AND outlet_id IS NULL
 		  AND split_status IS NULL
-		  AND tz_date(paid_at) >= $1::date AND tz_date(paid_at) <= $2::date`
+		  AND paid_at >= tz_day_start($1::date) AND paid_at < tz_day_start($2::date + 1)`
 	if filterIDs == nil {
 		if err := database.DB.QueryRow(nullPrQuery, nullPrArgs...).Scan(&nullOutletProcurement); err != nil {
 			return nil, err
@@ -821,7 +867,7 @@ func GetBalanceReport(dateFrom, dateTo, outletID string, scopeIDs []string) (*mo
 	cash := round2(sumRev + sumCashIn - sumExp)
 	receivables := sumUnpaid
 	totalAssets := round2(cash + receivables)
-	taxPayable := round2(sumRev * taxRate)
+	taxPayable := round2(taxTotal)
 	accountsPayable := round2(sumAP)
 	totalLiabilities := round2(taxPayable + accountsPayable)
 	totalEquity := round2(totalAssets - totalLiabilities)
@@ -845,7 +891,6 @@ func GetBalanceReport(dateFrom, dateTo, outletID string, scopeIDs []string) (*mo
 }
 
 func GetProfitLossReport(dateFrom, dateTo, outletID string, scopeIDs []string) (*models.ProfitLossResponse, error) {
-	taxRate := GetTaxRate()
 	round2 := func(v float64) float64 { return math.Round(v*100) / 100 }
 
 	// Normalize outlet filter
@@ -872,14 +917,14 @@ func GetProfitLossReport(dateFrom, dateTo, outletID string, scopeIDs []string) (
 		FROM (
 			SELECT tz_date(created_at) AS date, total_amount AS revenue, 0::float8 AS cogs, 0::float8 AS opex
 			FROM cloud_transactions
-			WHERE tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date`+outletFilter+`
+			WHERE created_at >= tz_day_start($1::date) AND created_at < tz_day_start($2::date + 1)`+outletFilter+`
 
 			UNION ALL
 
 			SELECT tz_date(created_at) AS date, 0::float8, 0::float8, amount
 			FROM cloud_cash_movements
 			WHERE LOWER(movement_type) NOT IN ('masuk','in','income','pemasukan')
-			  AND tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date`+outletFilter+`
+			  AND created_at >= tz_day_start($1::date) AND created_at < tz_day_start($2::date + 1)`+outletFilter+`
 
 			UNION ALL
 
@@ -890,7 +935,7 @@ func GetProfitLossReport(dateFrom, dateTo, outletID string, scopeIDs []string) (
 			WHERE status IN ('partial','paid','received')
 			  AND paid_at IS NOT NULL
 			  AND split_status IS NULL
-			  AND tz_date(paid_at) >= $1::date AND tz_date(paid_at) <= $2::date`+outletFilter+`
+			  AND paid_at >= tz_day_start($1::date) AND paid_at < tz_day_start($2::date + 1)`+outletFilter+`
 		) sub
 		GROUP BY date
 		ORDER BY date DESC`,
@@ -923,7 +968,7 @@ func GetProfitLossReport(dateFrom, dateTo, outletID string, scopeIDs []string) (
 	// Sales revenue
 	revArgs := []interface{}{dateFrom, dateTo}
 	revQ := `SELECT COALESCE(SUM(total_amount), 0) FROM cloud_transactions
-		WHERE tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date`
+		WHERE created_at >= tz_day_start($1::date) AND created_at < tz_day_start($2::date + 1)`
 	if filterIDs != nil {
 		revQ += ` AND outlet_id = ANY($3::text[])`
 		revArgs = append(revArgs, pq.Array(filterIDs))
@@ -934,7 +979,7 @@ func GetProfitLossReport(dateFrom, dateTo, outletID string, scopeIDs []string) (
 	oiArgs := []interface{}{dateFrom, dateTo}
 	oiQ := `SELECT COALESCE(SUM(amount), 0) FROM cloud_cash_movements
 		WHERE LOWER(movement_type) IN ('masuk','in','income','pemasukan')
-		  AND tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date`
+		  AND created_at >= tz_day_start($1::date) AND created_at < tz_day_start($2::date + 1)`
 	if filterIDs != nil {
 		oiQ += ` AND outlet_id = ANY($3::text[])`
 		oiArgs = append(oiArgs, pq.Array(filterIDs))
@@ -949,7 +994,7 @@ func GetProfitLossReport(dateFrom, dateTo, outletID string, scopeIDs []string) (
 	FROM purchase_requests
 	WHERE status IN ('partial','paid','received') AND paid_at IS NOT NULL
 	  AND split_status IS NULL
-	  AND tz_date(paid_at) >= $1::date AND tz_date(paid_at) <= $2::date`
+	  AND paid_at >= tz_day_start($1::date) AND paid_at < tz_day_start($2::date + 1)`
 	if filterIDs != nil {
 		prQ += ` AND outlet_id = ANY($3::text[])`
 		prArgs = append(prArgs, pq.Array(filterIDs))
@@ -960,7 +1005,7 @@ func GetProfitLossReport(dateFrom, dateTo, outletID string, scopeIDs []string) (
 	opArgs := []interface{}{dateFrom, dateTo}
 	opQ := `SELECT COALESCE(SUM(amount), 0) FROM cloud_cash_movements
 		WHERE LOWER(movement_type) NOT IN ('masuk','in','income','pemasukan')
-		  AND tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date`
+		  AND created_at >= tz_day_start($1::date) AND created_at < tz_day_start($2::date + 1)`
 	if filterIDs != nil {
 		opQ += ` AND outlet_id = ANY($3::text[])`
 		opArgs = append(opArgs, pq.Array(filterIDs))
@@ -971,7 +1016,8 @@ func GetProfitLossReport(dateFrom, dateTo, outletID string, scopeIDs []string) (
 	grossProfit := salesRevenue - totalCOGS
 	totalOpex := serviceExpense + operatingExpense
 	operatingProfit := grossProfit + otherIncome - totalOpex
-	taxExpense := round2(salesRevenue * taxRate)
+	_, pnlTax := taxTotalsByOutlet(dateFrom, dateTo, filterIDs)
+	taxExpense := round2(pnlTax)
 	netProfit := operatingProfit - taxExpense
 
 	grossMargin := 0.0
@@ -1001,7 +1047,7 @@ func GetProfitLossReport(dateFrom, dateTo, outletID string, scopeIDs []string) (
 		LEFT JOIN (
 			SELECT outlet_id, SUM(total_amount) AS revenue
 			FROM cloud_transactions
-			WHERE tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date
+			WHERE created_at >= tz_day_start($1::date) AND created_at < tz_day_start($2::date + 1)
 			GROUP BY outlet_id
 		) t ON t.outlet_id = o.id
 		LEFT JOIN (
@@ -1009,7 +1055,7 @@ func GetProfitLossReport(dateFrom, dateTo, outletID string, scopeIDs []string) (
 			FROM purchase_requests
 			WHERE status IN ('partial','paid','received') AND paid_at IS NOT NULL AND request_type = 'barang'
 			  AND split_status IS NULL
-			  AND tz_date(paid_at) >= $1::date AND tz_date(paid_at) <= $2::date
+			  AND paid_at >= tz_day_start($1::date) AND paid_at < tz_day_start($2::date + 1)
 			GROUP BY outlet_id
 		) pr_b ON pr_b.outlet_id = o.id
 		LEFT JOIN (
@@ -1017,14 +1063,14 @@ func GetProfitLossReport(dateFrom, dateTo, outletID string, scopeIDs []string) (
 			FROM purchase_requests
 			WHERE status IN ('partial','paid','received') AND paid_at IS NOT NULL AND request_type = 'jasa'
 			  AND split_status IS NULL
-			  AND tz_date(paid_at) >= $1::date AND tz_date(paid_at) <= $2::date
+			  AND paid_at >= tz_day_start($1::date) AND paid_at < tz_day_start($2::date + 1)
 			GROUP BY outlet_id
 		) pr_j ON pr_j.outlet_id = o.id
 		LEFT JOIN (
 			SELECT outlet_id, SUM(amount) AS expense
 			FROM cloud_cash_movements
 			WHERE LOWER(movement_type) NOT IN ('masuk','in','income','pemasukan')
-			  AND tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date
+			  AND created_at >= tz_day_start($1::date) AND created_at < tz_day_start($2::date + 1)
 			GROUP BY outlet_id
 		) mv ON mv.outlet_id = o.id
 		WHERE o.is_active = true
@@ -1075,7 +1121,6 @@ func GetProfitLossReport(dateFrom, dateTo, outletID string, scopeIDs []string) (
 
 func GetGeneralLedger(dateFrom, dateTo, outletID, accountFilter string, scopeIDs []string) (*models.GeneralLedgerResponse, error) {
 	round2 := func(v float64) float64 { return math.Round(v*100) / 100 }
-	taxRate := GetTaxRate()
 
 	// Account codes — COA F&B
 	const (
@@ -1137,7 +1182,7 @@ func GetGeneralLedger(dateFrom, dateTo, outletID, accountFilter string, scopeIDs
 			COALESCE(cashier_name, 'Kasir') || ' - ' || COALESCE(payment_method, '') AS description,
 			total_amount
 		FROM cloud_transactions
-		WHERE tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date` + outletFilter + `
+		WHERE created_at >= tz_day_start($1::date) AND created_at < tz_day_start($2::date + 1)` + outletFilter + `
 		ORDER BY created_at`
 
 	txRows, err := database.DB.Query(txQuery, args...)
@@ -1169,7 +1214,7 @@ func GetGeneralLedger(dateFrom, dateTo, outletID, accountFilter string, scopeIDs
 			movement_type,
 			amount
 		FROM cloud_cash_movements
-		WHERE tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date` + outletFilter + `
+		WHERE created_at >= tz_day_start($1::date) AND created_at < tz_day_start($2::date + 1)` + outletFilter + `
 		ORDER BY created_at`
 
 	mvRows, err := database.DB.Query(mvQuery, args...)
@@ -1219,7 +1264,7 @@ func GetGeneralLedger(dateFrom, dateTo, outletID, accountFilter string, scopeIDs
 		WHERE pr.status IN ('partial', 'paid', 'received')
 		  AND pr.paid_at IS NOT NULL
 		  AND (pr.split_status IS NULL OR pr.split_status != 'master')
-		  AND tz_date(pr.paid_at) >= $1::date AND tz_date(pr.paid_at) <= $2::date` + prFilter + `
+		  AND pr.paid_at >= tz_day_start($1::date) AND pr.paid_at < tz_day_start($2::date + 1)` + prFilter + `
 		ORDER BY pr.paid_at`
 
 	prRows, err := database.DB.Query(prQuery, prArgs...)
@@ -1266,7 +1311,7 @@ func GetGeneralLedger(dateFrom, dateTo, outletID, accountFilter string, scopeIDs
 		LEFT JOIN work_units wu ON wu.id = pr.work_unit_id
 		WHERE pr.status IN ('approved', 'payment_requested', 'partial')
 		  AND (pr.split_status IS NULL OR pr.split_status != 'master')
-		  AND tz_date(pr.created_at) >= $1::date AND tz_date(pr.created_at) <= $2::date` + apFilter + `
+		  AND pr.created_at >= tz_day_start($1::date) AND pr.created_at < tz_day_start($2::date + 1)` + apFilter + `
 		ORDER BY pr.created_at`
 
 	apRows, err := database.DB.Query(apQuery, apArgs...)
@@ -1312,7 +1357,7 @@ func GetGeneralLedger(dateFrom, dateTo, outletID, accountFilter string, scopeIDs
 		LEFT JOIN outlets ot ON ot.id = o.outlet_id
 		WHERE COALESCE(o.payment_info->>'payment_status','unpaid') NOT IN ('paid')
 		  AND NULLIF(o.payment_info->>'voided_at','') IS NULL
-		  AND tz_date(o.created_at) >= $1::date AND tz_date(o.created_at) <= $2::date` + unpFilter + `
+		  AND o.created_at >= tz_day_start($1::date) AND o.created_at < tz_day_start($2::date + 1)` + unpFilter + `
 		ORDER BY o.created_at`
 
 	unpRows, err := database.DB.Query(unpQuery, unpArgs...)
@@ -1335,12 +1380,13 @@ func GetGeneralLedger(dateFrom, dateTo, outletID, accountFilter string, scopeIDs
 	}
 	}
 
-	// 6) Pajak Restoran (PB1) — jurnal estimasi dari total penjualan harian
+	// 6) Pajak Restoran (PB1) — pakai tax_amount riil per transaksi (per-outlet,
+	// termasuk outlet yang pajaknya nonaktif/tarif beda), bukan revenue × tarif global.
 	if needQ(accTaxExpense, accTaxPayable) {
 	taxQuery := `
-		SELECT TO_CHAR(tz_date(created_at), 'YYYY-MM-DD') AS date, SUM(total_amount)
+		SELECT TO_CHAR(tz_date(created_at), 'YYYY-MM-DD') AS date, SUM(tax_amount)
 		FROM cloud_transactions
-		WHERE tz_date(created_at) >= $1::date AND tz_date(created_at) <= $2::date` + outletFilter + `
+		WHERE created_at >= tz_day_start($1::date) AND created_at < tz_day_start($2::date + 1)` + outletFilter + `
 		GROUP BY tz_date(created_at)
 		ORDER BY tz_date(created_at)`
 
@@ -1352,14 +1398,14 @@ func GetGeneralLedger(dateFrom, dateTo, outletID, accountFilter string, scopeIDs
 
 	for taxRows.Next() {
 		var date string
-		var dayRevenue float64
-		if err := taxRows.Scan(&date, &dayRevenue); err != nil {
+		var dayTax float64
+		if err := taxRows.Scan(&date, &dayTax); err != nil {
 			return nil, fmt.Errorf("general ledger: tax scan failed: %w", err)
 		}
-		taxAmt := round2(dayRevenue * taxRate)
+		taxAmt := round2(dayTax)
 		if taxAmt > 0 {
-			entries = append(entries, rawEntry{AccountCode: accTaxExpense, Date: date, Description: "Estimasi PB1 10%", Debit: taxAmt})
-			entries = append(entries, rawEntry{AccountCode: accTaxPayable, Date: date, Description: "Estimasi PB1 10%", Credit: taxAmt})
+			entries = append(entries, rawEntry{AccountCode: accTaxExpense, Date: date, Description: "Pajak Restoran (PB1)", Debit: taxAmt})
+			entries = append(entries, rawEntry{AccountCode: accTaxPayable, Date: date, Description: "Pajak Restoran (PB1)", Credit: taxAmt})
 		}
 	}
 	if err := taxRows.Err(); err != nil {
@@ -1640,12 +1686,12 @@ func GetDiscountReport(dateFrom, dateTo, outletID string, scopeIDs []string, pag
 		idx++
 	}
 	if dateFrom != "" {
-		conds = append(conds, fmt.Sprintf("tz_date(o.created_at) >= $%d::date", idx))
+		conds = append(conds, fmt.Sprintf("o.created_at >= tz_day_start($%d::date)", idx))
 		args = append(args, dateFrom)
 		idx++
 	}
 	if dateTo != "" {
-		conds = append(conds, fmt.Sprintf("tz_date(o.created_at) <= $%d::date", idx))
+		conds = append(conds, fmt.Sprintf("o.created_at < tz_day_start($%d::date + 1)", idx))
 		args = append(args, dateTo)
 		idx++
 	}

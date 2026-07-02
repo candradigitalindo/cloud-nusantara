@@ -73,6 +73,10 @@ apiClient.interceptors.response.use(
       //  so Login.vue can display the "wrong credentials" error)
       localStorage.removeItem(TOKEN_KEY)
       localStorage.removeItem('cloud_pos_admin')
+      localStorage.removeItem('cloud_pos_permissions')
+      localStorage.removeItem('cloud_pos_scope')
+      localStorage.removeItem('cloud_pos_scope_outlet_ids')
+      localStorage.removeItem('cloud_pos_redirect_to')
       window.location.href = '/login'
     }
     const message =

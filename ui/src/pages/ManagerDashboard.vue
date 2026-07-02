@@ -338,8 +338,10 @@ const data     = ref(null)
 const loading  = ref(false)
 const errorMsg = ref('')
 
-// Rentang tanggal terpilih (default: Hari Ini)
-function ymd(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
+// Rentang tanggal terpilih (default: Hari Ini) — "hari ini" mengikuti timezone
+// aplikasi (bukan jam device), agar konsisten dengan server & Dashboard.vue.
+const APP_TZ = localStorage.getItem('cloud_pos_timezone') || 'Asia/Jakarta'
+function ymd(d) { return d.toLocaleDateString('en-CA', { timeZone: APP_TZ }) }
 const _today = ymd(new Date())
 const range = ref({ from: _today, to: _today, label: 'Hari Ini' })
 watch(range, fetchData)

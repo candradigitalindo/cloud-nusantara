@@ -153,7 +153,7 @@ async function fetchReport() {
     if (selectedOutlet.value) params.set('outlet_id', selectedOutlet.value)
     report.value = await apiClient.get(`/admin/discount-report?${params}`)
   } catch (err) {
-    errorMsg.value = err?.response?.data?.error ?? 'Gagal memuat laporan diskon & komplimen'
+    errorMsg.value = err?.message ?? 'Gagal memuat laporan diskon & komplimen'
   } finally {
     loading.value = false
   }

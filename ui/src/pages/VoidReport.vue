@@ -275,7 +275,7 @@ async function fetchReport() {
     if (selectedOutlet.value) params.set('outlet_id', selectedOutlet.value)
     report.value = await apiClient.get(`/admin/void-report?${params}`)
   } catch (err) {
-    errorMsg.value = err?.response?.data?.error ?? 'Gagal memuat laporan void'
+    errorMsg.value = err?.message ?? 'Gagal memuat laporan void'
   } finally {
     loading.value = false
   }

@@ -39,10 +39,12 @@ func GetUnpaidOrders(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusForbidden).JSON(models.APIResponse{Success: false, Error: "Akses outlet tidak diizinkan"})
 	}
 	status := c.Query("status", "")
+	dateFrom := c.Query("date_from", "")
+	dateTo := c.Query("date_to", "")
 	page, limit := getPagination(c)
 	scopeIDs := getOutletScope(c)
 
-	report, err := services.GetUnpaidOrders(outletID, status, scopeIDs, page, limit)
+	report, err := services.GetUnpaidOrders(outletID, status, dateFrom, dateTo, scopeIDs, page, limit)
 	if err != nil {
 		log.Printf("GetUnpaidOrders error: %v", err)
 		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{

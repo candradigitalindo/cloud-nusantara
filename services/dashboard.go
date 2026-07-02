@@ -48,105 +48,80 @@ func GetDashboardStats(dateFrom, dateTo string, scopeIDs []string) (*models.Dash
 		outletsIDFilter = " AND id = ANY($1)"
 	}
 
-	var mainQuery string
-	if scopeIDs != nil {
-		mainQuery = fmt.Sprintf(`
+	// Satu pass SUM(CASE) per tabel besar (bukan 17 subquery = 17 scan terpisah).
+	// cloud_transactions & cloud_orders masing-masing cukup dibaca sekali.
+	run := func(q string, dest ...interface{}) error {
+		if scopeParam != nil {
+			return database.DB.QueryRow(q, scopeParam).Scan(dest...)
+		}
+		return database.DB.QueryRow(q).Scan(dest...)
+	}
+
+	txQuery := fmt.Sprintf(`
+		SELECT
+			COUNT(*),
+			COALESCE(SUM(total_amount),0),
+			COUNT(CASE WHEN created_at >= tz_day_start(date_trunc('month', tz_today()::timestamp)::date) THEN 1 END),
+			COUNT(CASE WHEN created_at >= tz_day_start((date_trunc('month', tz_today()::timestamp) - interval '1 month')::date) AND created_at < tz_day_start(date_trunc('month', tz_today()::timestamp)::date) THEN 1 END),
+			COALESCE(SUM(CASE WHEN created_at >= tz_day_start(date_trunc('month', tz_today()::timestamp)::date) THEN total_amount END),0),
+			COALESCE(SUM(CASE WHEN created_at >= tz_day_start((date_trunc('month', tz_today()::timestamp) - interval '1 month')::date) AND created_at < tz_day_start(date_trunc('month', tz_today()::timestamp)::date) THEN total_amount END),0),
+			COALESCE(SUM(CASE WHEN created_at >= tz_day_start(tz_today()) AND created_at < tz_day_start(tz_today() + 1) THEN total_amount END),0)
+		FROM cloud_transactions WHERE 1=1%s`, outletFilter)
+	if err := run(txQuery,
+		&stats.TotalTransactions, &stats.TotalRevenue,
+		&stats.MonthTransactions, &stats.MonthTransactionsPrev,
+		&stats.MonthRevenue, &stats.MonthRevenuePrev, &stats.TodayRevenue,
+	); err != nil {
+		return nil, fmt.Errorf("dashboard stats (transactions) failed: %w", err)
+	}
+
+	ordQuery := fmt.Sprintf(`
+		SELECT
+			COUNT(*),
+			COUNT(CASE WHEN created_at >= tz_day_start(tz_today()) AND created_at < tz_day_start(tz_today() + 1) THEN 1 END),
+			COUNT(CASE WHEN created_at >= tz_day_start(tz_today() - 1) AND created_at < tz_day_start(tz_today()) THEN 1 END),
+			COUNT(CASE WHEN COALESCE(payment_info->>'payment_status','unpaid') NOT IN ('paid') AND NULLIF(payment_info->>'voided_at','') IS NULL THEN 1 END),
+			COALESCE(SUM(CASE WHEN COALESCE(payment_info->>'payment_status','unpaid') NOT IN ('paid') AND NULLIF(payment_info->>'voided_at','') IS NULL THEN total_amount END),0)
+		FROM cloud_orders WHERE 1=1%s`, outletFilter)
+	if err := run(ordQuery,
+		&stats.TotalOrders, &stats.TodayOrders, &stats.TodayOrdersPrev,
+		&stats.TotalUnpaidOrders, &stats.TotalUnpaidAmount,
+	); err != nil {
+		return nil, fmt.Errorf("dashboard stats (orders) failed: %w", err)
+	}
+
+	miscQuery := fmt.Sprintf(`
 		SELECT
 			(SELECT COUNT(*) FROM outlets WHERE 1=1%s),
 			(SELECT COUNT(*) FROM outlets WHERE is_active = true%s),
-			(SELECT COUNT(*) FROM cloud_orders WHERE 1=1%s),
-			(SELECT COUNT(*) FROM cloud_transactions WHERE 1=1%s),
-			(SELECT COALESCE(SUM(total_amount),0) FROM cloud_transactions WHERE 1=1%s),
-			(SELECT COUNT(*) FROM cloud_transactions WHERE created_at >= date_trunc('month', CURRENT_TIMESTAMP)%s),
-			(SELECT COUNT(*) FROM cloud_transactions WHERE created_at >= date_trunc('month', CURRENT_TIMESTAMP) - INTERVAL '1 month' AND created_at < date_trunc('month', CURRENT_TIMESTAMP)%s),
-			(SELECT COALESCE(SUM(total_amount),0) FROM cloud_transactions WHERE created_at >= date_trunc('month', CURRENT_TIMESTAMP)%s),
-			(SELECT COALESCE(SUM(total_amount),0) FROM cloud_transactions WHERE created_at >= date_trunc('month', CURRENT_TIMESTAMP) - INTERVAL '1 month' AND created_at < date_trunc('month', CURRENT_TIMESTAMP)%s),
-			(SELECT COUNT(*) FROM cloud_orders WHERE tz_date(created_at) = tz_today()%s),
-			(SELECT COUNT(*) FROM cloud_orders WHERE tz_date(created_at) = tz_today() - 1%s),
-			(SELECT COALESCE(SUM(total_amount),0) FROM cloud_transactions WHERE tz_date(created_at) = tz_today()%s),
 			(SELECT COUNT(*) FROM cloud_products WHERE is_deleted = false%s),
 			(SELECT COUNT(*) FROM sync_logs WHERE 1=1%s),
-			(SELECT COUNT(*) FROM sync_conflicts WHERE (resolution IS NULL OR resolution = 'pending')%s),
-			(SELECT COUNT(*) FROM cloud_orders WHERE COALESCE(payment_info->>'payment_status','unpaid') NOT IN ('paid') AND NULLIF(payment_info->>'voided_at','') IS NULL%s),
-			(SELECT COALESCE(SUM(total_amount),0) FROM cloud_orders WHERE COALESCE(payment_info->>'payment_status','unpaid') NOT IN ('paid') AND NULLIF(payment_info->>'voided_at','') IS NULL%s)
-		`,
-			outletsIDFilter, outletsIDFilter,
-			outletFilter, outletFilter, outletFilter,
-			outletFilter, outletFilter,
-			outletFilter, outletFilter,
-			outletFilter, outletFilter,
-			outletFilter,
-			outletFilter,
-			outletFilter,
-			outletFilter,
-			outletFilter, outletFilter,
-		)
-	} else {
-		mainQuery = `
-		SELECT
-			(SELECT COUNT(*) FROM outlets),
-			(SELECT COUNT(*) FROM outlets WHERE is_active = true),
-			(SELECT COUNT(*) FROM cloud_orders),
-			(SELECT COUNT(*) FROM cloud_transactions),
-			(SELECT COALESCE(SUM(total_amount),0) FROM cloud_transactions),
-			(SELECT COUNT(*) FROM cloud_transactions WHERE created_at >= date_trunc('month', CURRENT_TIMESTAMP)),
-			(SELECT COUNT(*) FROM cloud_transactions WHERE created_at >= date_trunc('month', CURRENT_TIMESTAMP) - INTERVAL '1 month' AND created_at < date_trunc('month', CURRENT_TIMESTAMP)),
-			(SELECT COALESCE(SUM(total_amount),0) FROM cloud_transactions WHERE created_at >= date_trunc('month', CURRENT_TIMESTAMP)),
-			(SELECT COALESCE(SUM(total_amount),0) FROM cloud_transactions WHERE created_at >= date_trunc('month', CURRENT_TIMESTAMP) - INTERVAL '1 month' AND created_at < date_trunc('month', CURRENT_TIMESTAMP)),
-			(SELECT COUNT(*) FROM cloud_orders WHERE tz_date(created_at) = tz_today()),
-			(SELECT COUNT(*) FROM cloud_orders WHERE tz_date(created_at) = tz_today() - 1),
-			(SELECT COALESCE(SUM(total_amount),0) FROM cloud_transactions WHERE tz_date(created_at) = tz_today()),
-			(SELECT COUNT(*) FROM cloud_products WHERE is_deleted = false),
-			(SELECT COUNT(*) FROM sync_logs),
-			(SELECT COUNT(*) FROM sync_conflicts WHERE resolution IS NULL OR resolution = 'pending'),
-			(SELECT COUNT(*) FROM cloud_orders WHERE COALESCE(payment_info->>'payment_status','unpaid') NOT IN ('paid') AND NULLIF(payment_info->>'voided_at','') IS NULL),
-			(SELECT COALESCE(SUM(total_amount),0) FROM cloud_orders WHERE COALESCE(payment_info->>'payment_status','unpaid') NOT IN ('paid') AND NULLIF(payment_info->>'voided_at','') IS NULL)
-		`
-	}
-
-	var err error
-	if scopeParam != nil {
-		err = database.DB.QueryRow(mainQuery, scopeParam).Scan(
-			&stats.TotalOutlets, &stats.ActiveOutlets,
-			&stats.TotalOrders, &stats.TotalTransactions, &stats.TotalRevenue,
-			&stats.MonthTransactions, &stats.MonthTransactionsPrev,
-			&stats.MonthRevenue, &stats.MonthRevenuePrev,
-			&stats.TodayOrders, &stats.TodayOrdersPrev, &stats.TodayRevenue,
-			&stats.TotalProducts, &stats.TotalSyncLogs, &stats.PendingConflicts,
-			&stats.TotalUnpaidOrders, &stats.TotalUnpaidAmount,
-		)
-	} else {
-		err = database.DB.QueryRow(mainQuery).Scan(
-			&stats.TotalOutlets, &stats.ActiveOutlets,
-			&stats.TotalOrders, &stats.TotalTransactions, &stats.TotalRevenue,
-			&stats.MonthTransactions, &stats.MonthTransactionsPrev,
-			&stats.MonthRevenue, &stats.MonthRevenuePrev,
-			&stats.TodayOrders, &stats.TodayOrdersPrev, &stats.TodayRevenue,
-			&stats.TotalProducts, &stats.TotalSyncLogs, &stats.PendingConflicts,
-			&stats.TotalUnpaidOrders, &stats.TotalUnpaidAmount,
-		)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("dashboard stats query failed: %w", err)
+			(SELECT COUNT(*) FROM sync_conflicts WHERE (resolution IS NULL OR resolution = 'pending')%s)`,
+		outletsIDFilter, outletsIDFilter, outletFilter, outletFilter, outletFilter)
+	if err := run(miscQuery,
+		&stats.TotalOutlets, &stats.ActiveOutlets,
+		&stats.TotalProducts, &stats.TotalSyncLogs, &stats.PendingConflicts,
+	); err != nil {
+		return nil, fmt.Errorf("dashboard stats (misc) failed: %w", err)
 	}
 
 	const outletBase = `
 		SELECT
 			o.id,
 			o.name,
-			COALESCE(SUM(CASE WHEN tz_date(t.created_at) = tz_today()
+			COALESCE(SUM(CASE WHEN (t.created_at >= tz_day_start(tz_today()) AND t.created_at < tz_day_start(tz_today() + 1))
 				THEN t.total_amount ELSE 0 END), 0)                                       AS sales_day,
-			COALESCE(SUM(CASE WHEN tz_date(t.created_at) = tz_today() - INTERVAL '1 day'
+			COALESCE(SUM(CASE WHEN (t.created_at >= tz_day_start((tz_today() - INTERVAL '1 day')::date) AND t.created_at < tz_day_start(tz_today()))
 				THEN t.total_amount ELSE 0 END), 0)                                       AS sales_day_prev,
-			COALESCE(SUM(CASE WHEN t.created_at >= date_trunc('week', CURRENT_TIMESTAMP)
+			COALESCE(SUM(CASE WHEN t.created_at >= tz_day_start(date_trunc('week', tz_today()::timestamp)::date)
 				THEN t.total_amount ELSE 0 END), 0)                                       AS sales_week,
-			COALESCE(SUM(CASE WHEN t.created_at >= date_trunc('week', CURRENT_TIMESTAMP) - INTERVAL '7 days'
-				AND t.created_at < date_trunc('week', CURRENT_TIMESTAMP)
+			COALESCE(SUM(CASE WHEN t.created_at >= tz_day_start((date_trunc('week', tz_today()::timestamp) - interval '7 days')::date)
+				AND t.created_at < tz_day_start(date_trunc('week', tz_today()::timestamp)::date)
 				THEN t.total_amount ELSE 0 END), 0)                                       AS sales_week_prev,
-			COALESCE(SUM(CASE WHEN t.created_at >= date_trunc('month', CURRENT_TIMESTAMP)
+			COALESCE(SUM(CASE WHEN t.created_at >= tz_day_start(date_trunc('month', tz_today()::timestamp)::date)
 				THEN t.total_amount ELSE 0 END), 0)                                       AS sales_month,
-			COALESCE(SUM(CASE WHEN t.created_at >= date_trunc('month', CURRENT_TIMESTAMP) - INTERVAL '1 month'
-				AND t.created_at < date_trunc('month', CURRENT_TIMESTAMP)
+			COALESCE(SUM(CASE WHEN t.created_at >= tz_day_start((date_trunc('month', tz_today()::timestamp) - interval '1 month')::date)
+				AND t.created_at < tz_day_start(date_trunc('month', tz_today()::timestamp)::date)
 				THEN t.total_amount ELSE 0 END), 0)                                       AS sales_month_prev`
 
 	const outletStdTail = `,
@@ -186,10 +161,10 @@ func GetDashboardStats(dateFrom, dateTo string, scopeIDs []string) (*models.Dash
 		ORDER BY sales_month DESC`
 
 	const outletRangeTail = `,
-			COALESCE(SUM(CASE WHEN tz_date(t.created_at) >= $1::date AND tz_date(t.created_at) <= $2::date
+			COALESCE(SUM(CASE WHEN t.created_at >= tz_day_start($1::date) AND t.created_at < tz_day_start($2::date + 1)
 				THEN t.total_amount ELSE 0 END), 0)                                       AS sales_custom,
-			COALESCE(SUM(CASE WHEN tz_date(t.created_at) >= $1::date - ($2::date - $1::date + 1)
-				AND tz_date(t.created_at) < $1::date
+			COALESCE(SUM(CASE WHEN t.created_at >= tz_day_start($1::date - ($2::date - $1::date + 1))
+				AND t.created_at < tz_day_start($1::date)
 				THEN t.total_amount ELSE 0 END), 0)                                       AS sales_custom_prev,
 			COALESCE(u.cnt, 0)::int                                                       AS unpaid_orders,
 			COALESCE(u.amt, 0)                                                            AS unpaid_amount,
@@ -207,10 +182,10 @@ func GetDashboardStats(dateFrom, dateTo string, scopeIDs []string) (*models.Dash
 		ORDER BY sales_month DESC`
 
 	const outletRangeTailScoped = `,
-			COALESCE(SUM(CASE WHEN tz_date(t.created_at) >= $1::date AND tz_date(t.created_at) <= $2::date
+			COALESCE(SUM(CASE WHEN t.created_at >= tz_day_start($1::date) AND t.created_at < tz_day_start($2::date + 1)
 				THEN t.total_amount ELSE 0 END), 0)                                       AS sales_custom,
-			COALESCE(SUM(CASE WHEN tz_date(t.created_at) >= $1::date - ($2::date - $1::date + 1)
-				AND tz_date(t.created_at) < $1::date
+			COALESCE(SUM(CASE WHEN t.created_at >= tz_day_start($1::date - ($2::date - $1::date + 1))
+				AND t.created_at < tz_day_start($1::date)
 				THEN t.total_amount ELSE 0 END), 0)                                       AS sales_custom_prev,
 			COALESCE(u.cnt, 0)::int                                                       AS unpaid_orders,
 			COALESCE(u.amt, 0)                                                            AS unpaid_amount,
@@ -277,8 +252,8 @@ func GetManagerDashboard(scopeIDs []string, dateFrom, dateTo string) (*models.Ma
 	rFrom := dashDateExpr(dateFrom)
 	rTo := dashDateExpr(dateTo)
 	pFrom, pTo := dashPrevRange(dateFrom, dateTo)
-	inRange := fmt.Sprintf("tz_date(t.created_at) BETWEEN %s AND %s", rFrom, rTo)
-	inPrev := fmt.Sprintf("tz_date(t.created_at) BETWEEN %s AND %s", pFrom, pTo)
+	inRange := fmt.Sprintf("(t.created_at >= tz_day_start(%s) AND t.created_at < tz_day_start(%s + 1))", rFrom, rTo)
+	inPrev := fmt.Sprintf("(t.created_at >= tz_day_start(%s) AND t.created_at < tz_day_start(%s + 1))", pFrom, pTo)
 
 	// Build scope filter helpers
 	var scopeParam interface{}
@@ -293,16 +268,16 @@ func GetManagerDashboard(scopeIDs []string, dateFrom, dateTo string) (*models.Ma
 	// ── 1. KPI aggregates ──────────────────────────────────
 	kpiQuery := fmt.Sprintf(`
 		SELECT
-			COALESCE(SUM(CASE WHEN tz_date(t.created_at) = tz_today() THEN t.total_amount ELSE 0 END), 0),
-			COALESCE(COUNT(CASE WHEN tz_date(t.created_at) = tz_today() THEN 1 END), 0),
-			COALESCE(SUM(CASE WHEN tz_date(t.created_at) = tz_today() - 1 THEN t.total_amount ELSE 0 END), 0),
-			COALESCE(COUNT(CASE WHEN tz_date(t.created_at) = tz_today() - 1 THEN 1 END), 0),
-			COALESCE(SUM(CASE WHEN t.created_at >= date_trunc('month', CURRENT_TIMESTAMP) THEN t.total_amount ELSE 0 END), 0),
-			COALESCE(SUM(CASE WHEN t.created_at >= date_trunc('month', CURRENT_TIMESTAMP) - INTERVAL '1 month' AND t.created_at < date_trunc('month', CURRENT_TIMESTAMP) THEN t.total_amount ELSE 0 END), 0),
-			COALESCE(COUNT(CASE WHEN t.created_at >= date_trunc('month', CURRENT_TIMESTAMP) THEN 1 END), 0),
-			COALESCE(COUNT(CASE WHEN t.created_at >= date_trunc('month', CURRENT_TIMESTAMP) - INTERVAL '1 month' AND t.created_at < date_trunc('month', CURRENT_TIMESTAMP) THEN 1 END), 0),
-			COALESCE(SUM(CASE WHEN t.created_at >= date_trunc('week', CURRENT_TIMESTAMP) THEN t.total_amount ELSE 0 END), 0),
-			COALESCE(SUM(CASE WHEN t.created_at >= date_trunc('week', CURRENT_TIMESTAMP) - INTERVAL '7 days' AND t.created_at < date_trunc('week', CURRENT_TIMESTAMP) THEN t.total_amount ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN (t.created_at >= tz_day_start(tz_today()) AND t.created_at < tz_day_start(tz_today() + 1)) THEN t.total_amount ELSE 0 END), 0),
+			COALESCE(COUNT(CASE WHEN (t.created_at >= tz_day_start(tz_today()) AND t.created_at < tz_day_start(tz_today() + 1)) THEN 1 END), 0),
+			COALESCE(SUM(CASE WHEN (t.created_at >= tz_day_start(tz_today() - 1) AND t.created_at < tz_day_start(tz_today())) THEN t.total_amount ELSE 0 END), 0),
+			COALESCE(COUNT(CASE WHEN (t.created_at >= tz_day_start(tz_today() - 1) AND t.created_at < tz_day_start(tz_today())) THEN 1 END), 0),
+			COALESCE(SUM(CASE WHEN t.created_at >= tz_day_start(date_trunc('month', tz_today()::timestamp)::date) THEN t.total_amount ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN t.created_at >= tz_day_start((date_trunc('month', tz_today()::timestamp) - interval '1 month')::date) AND t.created_at < tz_day_start(date_trunc('month', tz_today()::timestamp)::date) THEN t.total_amount ELSE 0 END), 0),
+			COALESCE(COUNT(CASE WHEN t.created_at >= tz_day_start(date_trunc('month', tz_today()::timestamp)::date) THEN 1 END), 0),
+			COALESCE(COUNT(CASE WHEN t.created_at >= tz_day_start((date_trunc('month', tz_today()::timestamp) - interval '1 month')::date) AND t.created_at < tz_day_start(date_trunc('month', tz_today()::timestamp)::date) THEN 1 END), 0),
+			COALESCE(SUM(CASE WHEN t.created_at >= tz_day_start(date_trunc('week', tz_today()::timestamp)::date) THEN t.total_amount ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN t.created_at >= tz_day_start((date_trunc('week', tz_today()::timestamp) - interval '7 days')::date) AND t.created_at < tz_day_start(date_trunc('week', tz_today()::timestamp)::date) THEN t.total_amount ELSE 0 END), 0),
 			COALESCE(SUM(CASE WHEN %s THEN t.total_amount ELSE 0 END), 0),
 			COALESCE(COUNT(CASE WHEN %s THEN 1 END), 0),
 			COALESCE(SUM(CASE WHEN %s THEN t.total_amount ELSE 0 END), 0),
@@ -400,15 +375,16 @@ func GetManagerDashboard(scopeIDs []string, dateFrom, dateTo string) (*models.Ma
 		_ = database.DB.QueryRow(countQuery).Scan(&stats.ActiveOutlets, &stats.TotalProducts, &stats.UnpaidOrders, &stats.UnpaidAmount)
 	}
 
-	// ── 2. Revenue trend (last 30 days) ────────────────────
+	// ── 2+3. Revenue & order trend (satu scan untuk dua seri) ──
 	trendQuery := fmt.Sprintf(`
-		SELECT TO_CHAR(d.dt, 'YYYY-MM-DD'), COALESCE(SUM(t.total_amount), 0)
+		SELECT TO_CHAR(d.dt, 'YYYY-MM-DD'), COALESCE(SUM(t.total_amount), 0), COALESCE(COUNT(t.id), 0)
 		FROM generate_series(%s, %s, '1 day'::interval) d(dt)
-		LEFT JOIN cloud_transactions t ON tz_date(t.created_at) = d.dt%s
+		LEFT JOIN cloud_transactions t ON (t.created_at >= tz_day_start(d.dt::date) AND t.created_at < tz_day_start(d.dt::date + 1))%s
 		GROUP BY d.dt ORDER BY d.dt
 	`, rFrom, rTo, outletFilter)
 
 	stats.RevenueTrend = []models.DailyPoint{}
+	stats.OrderTrend = []models.DailyPoint{}
 	var trendRows *sql.Rows
 	var trendErr error
 	if scopeParam != nil {
@@ -419,35 +395,11 @@ func GetManagerDashboard(scopeIDs []string, dateFrom, dateTo string) (*models.Ma
 	if trendErr == nil {
 		defer trendRows.Close()
 		for trendRows.Next() {
-			var p models.DailyPoint
-			if err := trendRows.Scan(&p.Date, &p.Value); err == nil {
-				stats.RevenueTrend = append(stats.RevenueTrend, p)
-			}
-		}
-	}
-
-	// ── 3. Order trend (last 30 days) ──────────────────────
-	orderTrendQuery := fmt.Sprintf(`
-		SELECT TO_CHAR(d.dt, 'YYYY-MM-DD'), COALESCE(COUNT(t.id), 0)
-		FROM generate_series(%s, %s, '1 day'::interval) d(dt)
-		LEFT JOIN cloud_transactions t ON tz_date(t.created_at) = d.dt%s
-		GROUP BY d.dt ORDER BY d.dt
-	`, rFrom, rTo, outletFilter)
-
-	stats.OrderTrend = []models.DailyPoint{}
-	var otRows *sql.Rows
-	var otErr error
-	if scopeParam != nil {
-		otRows, otErr = database.DB.Query(orderTrendQuery, scopeParam)
-	} else {
-		otRows, otErr = database.DB.Query(orderTrendQuery)
-	}
-	if otErr == nil {
-		defer otRows.Close()
-		for otRows.Next() {
-			var p models.DailyPoint
-			if err := otRows.Scan(&p.Date, &p.Value); err == nil {
-				stats.OrderTrend = append(stats.OrderTrend, p)
+			var date string
+			var revenue, count float64
+			if err := trendRows.Scan(&date, &revenue, &count); err == nil {
+				stats.RevenueTrend = append(stats.RevenueTrend, models.DailyPoint{Date: date, Value: revenue})
+				stats.OrderTrend = append(stats.OrderTrend, models.DailyPoint{Date: date, Value: count})
 			}
 		}
 	}
@@ -551,10 +503,10 @@ func GetManagerDashboard(scopeIDs []string, dateFrom, dateTo string) (*models.Ma
 	// ── 7. Outlet ranking ──────────────────────────────────
 	outletQuery := fmt.Sprintf(`
 		SELECT o.id, o.name,
-			COALESCE(SUM(CASE WHEN tz_date(t.created_at) = tz_today() THEN t.total_amount ELSE 0 END), 0),
-			COALESCE(SUM(CASE WHEN t.created_at >= date_trunc('month', CURRENT_TIMESTAMP) THEN t.total_amount ELSE 0 END), 0),
-			COALESCE(COUNT(CASE WHEN tz_date(t.created_at) = tz_today() THEN 1 END), 0)::int,
-			COALESCE(COUNT(CASE WHEN t.created_at >= date_trunc('month', CURRENT_TIMESTAMP) THEN 1 END), 0)::int,
+			COALESCE(SUM(CASE WHEN (t.created_at >= tz_day_start(tz_today()) AND t.created_at < tz_day_start(tz_today() + 1)) THEN t.total_amount ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN t.created_at >= tz_day_start(date_trunc('month', tz_today()::timestamp)::date) THEN t.total_amount ELSE 0 END), 0),
+			COALESCE(COUNT(CASE WHEN (t.created_at >= tz_day_start(tz_today()) AND t.created_at < tz_day_start(tz_today() + 1)) THEN 1 END), 0)::int,
+			COALESCE(COUNT(CASE WHEN t.created_at >= tz_day_start(date_trunc('month', tz_today()::timestamp)::date) THEN 1 END), 0)::int,
 			COALESCE(SUM(CASE WHEN `+inRange+` THEN t.total_amount ELSE 0 END), 0),
 			COALESCE(COUNT(CASE WHEN `+inRange+` THEN 1 END), 0)::int,
 			(SELECT COALESCE(SUM(total_amount),0) FROM cloud_orders co

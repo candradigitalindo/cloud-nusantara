@@ -25,7 +25,7 @@
             labelKey="label"
           />
         </div>
-        <button @click="page = 1; fetchReport()"
+        <button @click="applyFilter"
           class="px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors shadow-sm">
           Tampilkan
         </button>
@@ -252,7 +252,12 @@ async function openUnpaid() {
   showUnpaid.value = true
   unpaidLoading.value = true
   try {
-    const res = await salesApi.getUnpaidOrders({ outlet_id: selectedOutlet.value || undefined, limit: 200 })
+    const res = await salesApi.getUnpaidOrders({
+      outlet_id: selectedOutlet.value || undefined,
+      date_from: dateFrom.value,
+      date_to: dateTo.value,
+      limit: 200,
+    })
     unpaidOrders.value = res?.orders ?? res?.data?.orders ?? (Array.isArray(res) ? res : [])
   } catch { unpaidOrders.value = [] } finally { unpaidLoading.value = false }
 }
@@ -277,6 +282,13 @@ onMounted(async () => {
 })
 
 watch(page, fetchReport)
+
+// Set page ke 1 memicu watcher di atas; fetch manual hanya bila sudah di page 1
+// (kalau tidak, tombol Tampilkan dari page > 1 memicu dua request identik).
+function applyFilter() {
+  if (page.value === 1) fetchReport()
+  else page.value = 1
+}
 
 async function fetchReport() {
   loading.value = true
