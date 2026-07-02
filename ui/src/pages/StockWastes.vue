@@ -21,11 +21,7 @@
             @change="load"
           />
         </div>
-        <div class="flex items-center gap-2">
-          <input type="date" v-model="filters.date_from" @change="load" class="text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-400" />
-          <span class="text-gray-400">-</span>
-          <input type="date" v-model="filters.date_to" @change="load" class="text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-400" />
-        </div>
+        <DateRangePicker v-model="range" clearable />
         <input v-model="filters.search" @input="debouncedLoad" placeholder="Cari item atau nomor..."
           class="flex-1 min-w-[200px] text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-400" />
       </div>
@@ -147,7 +143,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, reactive, computed } from 'vue'
+import { ref, onMounted, reactive, computed, watch } from 'vue'
 import { getWastes, createWaste } from '@/api/waste'
 import { warehousesApi, stockItemsApi } from '@/api/warehouse'
 import { useToastStore } from '@/stores/toast'
@@ -161,6 +157,7 @@ import AppModal      from '@/components/ui/AppModal.vue'
 import AppPagination from '@/components/ui/AppPagination.vue'
 import AppTable      from '@/components/ui/AppTable.vue'
 import SearchSelect  from '@/components/ui/SearchSelect.vue'
+import DateRangePicker from '@/components/ui/DateRangePicker.vue'
 
 
 const toast = useToastStore()
@@ -190,6 +187,8 @@ const filters = reactive({
   date_from: '',
   date_to: '',
 })
+const range = ref({ from: '', to: '', label: 'Semua Tanggal' })
+watch(range, (r) => { filters.date_from = r.from; filters.date_to = r.to; load() })
 
 const warehouseOptions = ref([{ id: '', name: 'Semua Gudang' }])
 

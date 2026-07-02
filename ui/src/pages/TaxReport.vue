@@ -5,14 +5,8 @@
     <AppCard>
       <div class="flex flex-wrap items-end gap-4">
         <div class="flex flex-col gap-1">
-          <label class="text-sm font-medium text-gray-700">Dari Tanggal</label>
-          <input type="date" v-model="dateFrom"
-            class="rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
-        </div>
-        <div class="flex flex-col gap-1">
-          <label class="text-sm font-medium text-gray-700">Sampai Tanggal</label>
-          <input type="date" v-model="dateTo"
-            class="rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+          <label class="text-sm font-medium text-gray-700">Rentang Tanggal</label>
+          <DateRangePicker v-model="range" />
         </div>
         <div class="flex flex-col gap-1 min-w-45">
           <label class="text-sm font-medium text-gray-700">Outlet</label>
@@ -99,7 +93,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { salesApi }    from '@/api/sales.js'
 import { outletsApi }  from '@/api/outlets.js'
 import { formatRupiah, formatDateStr, todayDateString } from '@/utils/format.js'
@@ -109,10 +103,13 @@ import AppAlert     from '@/components/ui/AppAlert.vue'
 import AppSpinner   from '@/components/ui/AppSpinner.vue'
 import SearchSelect from '@/components/ui/SearchSelect.vue'
 import SummaryCard  from '@/components/SummaryCard.vue'
+import DateRangePicker from '@/components/ui/DateRangePicker.vue'
 
 const today = todayDateString()
 const dateFrom       = ref(today)
 const dateTo         = ref(today)
+const range          = ref({ from: dateFrom.value, to: dateTo.value, label: 'Hari Ini' })
+watch(range, (r) => { dateFrom.value = r.from; dateTo.value = r.to; fetchReport() })
 const selectedOutlet = ref('')
 const outletOptions  = ref([])
 const loading        = ref(false)

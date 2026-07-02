@@ -17,13 +17,7 @@
       <div class="flex items-center gap-2 px-4 py-3 border-b border-gray-100 flex-wrap">
         <input v-model="search" @input="debouncedLoad" placeholder="Cari username / IP / role..."
           class="flex-1 min-w-[180px] text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-400" />
-        <div class="flex items-center gap-1.5 text-sm text-gray-500">
-          <input v-model="dateFrom" type="date" :max="dateTo || undefined" @change="reload"
-            class="text-sm border border-gray-200 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-violet-400" />
-          <span class="text-gray-400">→</span>
-          <input v-model="dateTo" type="date" :min="dateFrom || undefined" @change="reload"
-            class="text-sm border border-gray-200 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-violet-400" />
-        </div>
+        <DateRangePicker v-model="range" clearable />
         <select v-model="status" @change="reload" class="text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-400">
           <option value="">Semua status</option>
           <option value="success">Berhasil</option>
@@ -76,6 +70,7 @@ import AppCard from '@/components/ui/AppCard.vue'
 import AppTable from '@/components/ui/AppTable.vue'
 import AppPagination from '@/components/ui/AppPagination.vue'
 import AppAlert from '@/components/ui/AppAlert.vue'
+import DateRangePicker from '@/components/ui/DateRangePicker.vue'
 
 const rows = ref([])
 const total = ref(0)
@@ -94,11 +89,12 @@ function todayStr() {
 }
 const dateFrom = ref(todayStr())
 const dateTo   = ref(todayStr())
+const range = ref({ from: dateFrom.value, to: dateTo.value, label: 'Hari Ini' })
+watch(range, (r) => { dateFrom.value = r.from; dateTo.value = r.to; reload() })
 
 function setToday() {
-  dateFrom.value = todayStr()
-  dateTo.value = todayStr()
-  reload()
+  // Lewat range agar label picker ikut ter-update; watcher-nya yang me-reload.
+  range.value = { from: todayStr(), to: todayStr(), label: 'Hari Ini' }
 }
 
 const COLUMNS = [

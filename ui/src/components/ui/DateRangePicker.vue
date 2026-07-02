@@ -59,7 +59,12 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 
-const props = defineProps({ modelValue: { type: Object, default: () => ({}) } })
+const props = defineProps({
+  modelValue: { type: Object, default: () => ({}) },
+  // Tampilkan preset "Semua Tanggal" (from/to kosong = tanpa filter) — untuk
+  // halaman yang default-nya menampilkan semua data (reservasi, shift, dll).
+  clearable: { type: Boolean, default: false },
+})
 const emit = defineEmits(['update:modelValue'])
 
 const open = ref(false)
@@ -84,7 +89,9 @@ const presets = computed(() => {
   const soy = new Date(t.getFullYear(), 0, 1)
   const soyLast = new Date(t.getFullYear() - 1, 0, 1)
   const eoyLast = new Date(t.getFullYear() - 1, 11, 31)
+  const list = props.clearable ? [{ key: 'all', label: 'Semua Tanggal', from: '', to: '' }] : []
   return [
+    ...list,
     { key: 'today', label: 'Hari Ini', from: ymd(t), to: ymd(t) },
     { key: 'yesterday', label: 'Kemarin', from: ymd(y), to: ymd(y) },
     { key: 'this_week', label: 'Minggu Ini', from: ymd(sow), to: ymd(t) },

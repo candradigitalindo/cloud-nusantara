@@ -116,10 +116,7 @@
         {{ movTarget?.item_name }} — {{ movTarget?.warehouse_name }}
       </div>
       <div class="flex gap-2 mb-3">
-        <input v-model="movDateFrom" type="date"
-          class="text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-400" />
-        <input v-model="movDateTo" type="date"
-          class="text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-400" />
+        <DateRangePicker v-model="movRange" clearable />
         <AppButton size="sm" @click="loadMovements">Tampilkan</AppButton>
       </div>
       <div class="overflow-auto max-h-96">
@@ -237,6 +234,7 @@ import AppInput      from '@/components/ui/AppInput.vue'
 import AppAlert      from '@/components/ui/AppAlert.vue'
 import AppPagination from '@/components/ui/AppPagination.vue'
 import SearchSelect  from '@/components/ui/SearchSelect.vue'
+import DateRangePicker from '@/components/ui/DateRangePicker.vue'
 import { formatWarehouseOptionLabel } from '@/utils/warehouse.js'
 
 const toast = useToastStore()
@@ -260,6 +258,8 @@ const movTarget = ref(null)
 const movements = ref([])
 const movLoading = ref(false)
 const movDateFrom = ref('')
+const movRange = ref({ from: '', to: '', label: 'Semua Tanggal' })
+watch(movRange, (r) => { movDateFrom.value = r.from; movDateTo.value = r.to; loadMovements() })
 const movDateTo = ref('')
 
 // Adjustment

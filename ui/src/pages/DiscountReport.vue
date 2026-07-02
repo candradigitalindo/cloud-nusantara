@@ -5,14 +5,8 @@
     <AppCard>
       <div class="flex flex-wrap items-end gap-4">
         <div class="flex flex-col gap-1">
-          <label class="text-sm font-medium text-gray-700">Dari Tanggal</label>
-          <input type="date" v-model="dateFrom" :max="dateTo || undefined"
-            class="rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
-        </div>
-        <div class="flex flex-col gap-1">
-          <label class="text-sm font-medium text-gray-700">Sampai Tanggal</label>
-          <input type="date" v-model="dateTo" :min="dateFrom || undefined"
-            class="rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+          <label class="text-sm font-medium text-gray-700">Rentang Tanggal</label>
+          <DateRangePicker v-model="range" />
         </div>
         <div class="flex flex-col gap-1 min-w-45">
           <label class="text-sm font-medium text-gray-700">Outlet</label>
@@ -113,13 +107,14 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { apiClient } from '@/api/client.js'
 import { outletsApi } from '@/api/outlets.js'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppAlert from '@/components/ui/AppAlert.vue'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
 import SearchSelect from '@/components/ui/SearchSelect.vue'
+import DateRangePicker from '@/components/ui/DateRangePicker.vue'
 
 function firstOfMonth() {
   const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`
@@ -130,6 +125,8 @@ function today() {
 
 const dateFrom = ref(firstOfMonth())
 const dateTo   = ref(today())
+const range          = ref({ from: dateFrom.value, to: dateTo.value, label: 'Bulan Ini' })
+watch(range, (r) => { dateFrom.value = r.from; dateTo.value = r.to; page.value = 1; fetchReport() })
 const selectedOutlet = ref('')
 const outletOptions  = ref([{ value: '', label: 'Semua Outlet' }])
 const report   = ref(null)

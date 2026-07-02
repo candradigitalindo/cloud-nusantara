@@ -12,14 +12,13 @@
 
     <!-- Filters + public link -->
     <AppCard>
-      <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <SearchSelect v-model="filterOutlet" :options="outletFilterOptions" placeholder="Semua outlet" searchPlaceholder="Cari outlet…" @change="load" />
         <select v-model="filterStatus" @change="load" class="form-input">
           <option value="">Semua status</option>
           <option v-for="(l,k) in STATUS" :key="k" :value="k">{{ l }}</option>
         </select>
-        <input v-model="dateFrom" @change="load" type="date" class="form-input" />
-        <input v-model="dateTo" @change="load" type="date" class="form-input" />
+        <DateRangePicker v-model="range" clearable />
       </div>
       <div v-if="selectedOutletObj?.slug" class="mt-3 flex items-center gap-2 flex-wrap text-xs">
         <span class="text-gray-500">Link reservasi publik:</span>
@@ -175,7 +174,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { reservationsApi } from '@/api/reservations.js'
 import { productsApi } from '@/api/products.js'
 import { outletsApi } from '@/api/outlets.js'
@@ -188,6 +187,7 @@ import AppAlert from '@/components/ui/AppAlert.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppModal from '@/components/ui/AppModal.vue'
 import SearchSelect from '@/components/ui/SearchSelect.vue'
+import DateRangePicker from '@/components/ui/DateRangePicker.vue'
 
 const toast = useToastStore()
 const auth = useAuthStore()
@@ -217,6 +217,8 @@ const filterOutlet = ref('')
 const filterStatus = ref('')
 const dateFrom = ref('')
 const dateTo = ref('')
+const range = ref({ from: '', to: '', label: 'Semua Tanggal' })
+watch(range, (r) => { dateFrom.value = r.from; dateTo.value = r.to; load() })
 const copied = ref(false)
 
 const outletFilterOptions = computed(() => [{ id: '', name: 'Semua outlet' }, ...outlets.value])
