@@ -136,7 +136,7 @@
                 <p class="panel-sub">30 hari terakhir</p>
               </div>
             </div>
-            <div class="flex items-center gap-4 text-xs">
+            <div class="flex flex-wrap items-center justify-end gap-x-4 gap-y-1 text-xs">
               <span class="legend-dot"><span class="ld" style="background:#3b82f6"></span>Pendapatan</span>
               <span class="legend-dot"><span class="ld" style="background:#10b981"></span>Transaksi</span>
             </div>
@@ -727,7 +727,7 @@ const paymentOpts = computed(() => {
 .trend-stats { display: flex; align-items: stretch; gap: .25rem; margin: .5rem 1.25rem 0; padding: .6rem .85rem; border-radius: .75rem; background: rgba(240,247,243,.7); border: 1px solid rgba(0,0,0,.04); }
 .ts-item { display: flex; flex-direction: column; gap: .1rem; flex: 1; min-width: 0; }
 .ts-label { font-size: .62rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: #8a9e93; }
-.ts-value { font-size: .9rem; font-weight: 700; color: #0f2d1d; line-height: 1.15; }
+.ts-value { font-size: .9rem; font-weight: 700; color: #0f2d1d; line-height: 1.15; font-variant-numeric: tabular-nums; }
 .ts-meta { font-size: .64rem; color: #9ab5a5; }
 .ts-divider { width: 1px; background: rgba(0,0,0,.07); margin: .1rem .15rem; }
 
@@ -806,6 +806,12 @@ const paymentOpts = computed(() => {
 @media (max-width: 640px) {
   .chart-body { height: 230px; padding: .75rem; }
   .stat-card { padding: 1rem; }
-  .trend-stats { flex-wrap: wrap; }
+  .panel-header { flex-wrap: wrap; }
+  /* Stack the summary strip: one stat per row so long rupiah values never overflow */
+  .trend-stats { flex-direction: column; align-items: stretch; gap: .45rem; margin: .5rem .85rem 0; }
+  .ts-item { flex-direction: row; align-items: baseline; flex-wrap: wrap; gap: .5rem; }
+  .ts-item .ts-label { margin-right: auto; }
+  .ts-value { white-space: nowrap; }
+  .ts-divider { width: 100%; height: 1px; margin: 0; }
 }
 </style>
