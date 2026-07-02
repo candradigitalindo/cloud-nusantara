@@ -277,16 +277,17 @@ const currentDate = computed(() => {
 
 // ── Lifecycle ─────────────────────────────────────────────────
 onMounted(fetchStats)
-// Auto-refresh saat ada transaksi/order baru masuk dari outlet (SSE).
-useRealtime(['transaction', 'order'], () => fetchStats())
+// Auto-update saat ada transaksi/order baru masuk dari outlet (SSE) —
+// silent: data diganti di tempat, tanpa spinner/kedip.
+useRealtime(['transaction', 'order'], () => fetchStats(undefined, true))
 
-async function fetchStats(params) {
-  loading.value  = true
+async function fetchStats(params, silent = false) {
+  if (!silent) loading.value = true
   errorMsg.value = ''
   try {
     stats.value = await dashboardApi.getStats(params)
   } catch (err) {
-    errorMsg.value = err?.message ?? 'Gagal memuat statistik dashboard.'
+    if (!silent) errorMsg.value = err?.message ?? 'Gagal memuat statistik dashboard.'
   } finally {
     loading.value = false
   }

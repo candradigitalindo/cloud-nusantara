@@ -191,8 +191,9 @@ const dateFrom = ref(_today)
 const dateTo = ref(_today)
 const range = ref({ from: _today, to: _today, label: 'Hari Ini' })
 watch(range, (r) => { dateFrom.value = r.from; dateTo.value = r.to; load() })
-// Auto-refresh: shift buka/tutup, kas masuk/keluar, dan transaksi baru (omzet ☁ live).
-useRealtime(['cashier_shift', 'cash_movement', 'transaction'], load)
+// Auto-update: shift buka/tutup, kas masuk/keluar, transaksi baru (omzet ☁ live).
+// silent — angka berubah di tempat tanpa spinner.
+useRealtime(['cashier_shift', 'cash_movement', 'transaction'], () => load(true))
 
 const detailOpen = ref(false)
 const active = ref(null)
@@ -220,8 +221,9 @@ function varLabel(sh) {
 
 function openDetail(sh) { active.value = sh; detailOpen.value = true }
 
-async function load() {
-  loading.value = true; errorMsg.value = ''
+async function load(silent = false) {
+  if (silent !== true) { loading.value = true }
+  errorMsg.value = ''
   try {
     const d = await cashierShiftsApi.getReport({
       outlet_id: filterOutlet.value || undefined,
@@ -230,7 +232,7 @@ async function load() {
       date_to: dateTo.value || undefined,
     })
     report.value = d?.data ?? d
-  } catch (e) { errorMsg.value = e?.message || 'Gagal memuat laporan' } finally { loading.value = false }
+  } catch (e) { if (silent !== true) errorMsg.value = e?.message || 'Gagal memuat laporan' } finally { loading.value = false }
 }
 async function loadOutlets() {
   try { const d = await outletsApi.myOutlets(); outlets.value = d?.outlets ?? d ?? [] } catch { outlets.value = [] }

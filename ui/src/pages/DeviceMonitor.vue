@@ -317,27 +317,28 @@ async function loadHistory(outletId) {
   } catch { history.value = [] } finally { histLoading.value = false }
 }
 
-async function load() {
-  loading.value = true; errorMsg.value = ''
+async function load(silent = false) {
+  if (silent !== true) { loading.value = true }
+  errorMsg.value = ''
   try {
     const d = await devicesApi.monitor({ outlet_id: filterOutlet.value || undefined })
     report.value = d?.data ?? d
     lastUpdated.value = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
-  } catch (e) { errorMsg.value = e?.message || 'Gagal memuat status perangkat' } finally { loading.value = false }
+  } catch (e) { if (silent !== true) errorMsg.value = e?.message || 'Gagal memuat status perangkat' } finally { loading.value = false }
 }
 async function loadOutlets() {
   try { const d = await outletsApi.myOutlets(); outlets.value = d?.outlets ?? d ?? [] } catch { outlets.value = [] }
 }
 
 watch(autoRefresh, (on) => { on ? startTimer() : stopTimer() })
-function startTimer() { stopTimer(); timer = setInterval(load, 30000) }
+function startTimer() { stopTimer(); timer = setInterval(() => load(true), 30000) }
 function stopTimer() { if (timer) { clearInterval(timer); timer = null } }
 
 onMounted(async () => { await loadOutlets(); await load(); if (autoRefresh.value) startTimer() })
 onUnmounted(stopTimer)
-// SSE: refresh seketika saat heartbeat device masuk (polling 30 dtk tetap
-// berjalan sebagai fallback bila koneksi stream terputus).
-useRealtime(['device'], load)
+// SSE: update seketika saat heartbeat device masuk (polling 30 dtk tetap
+// berjalan sebagai fallback bila koneksi stream terputus). silent — tanpa kedip.
+useRealtime(['device'], () => load(true))
 </script>
 
 <style scoped>

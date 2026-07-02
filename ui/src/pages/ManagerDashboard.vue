@@ -346,8 +346,9 @@ function ymd(d) { return d.toLocaleDateString('en-CA', { timeZone: APP_TZ }) }
 const _today = ymd(new Date())
 const range = ref({ from: _today, to: _today, label: 'Hari Ini' })
 watch(range, fetchData)
-// Auto-refresh saat transaksi/order baru tersinkron dari outlet (SSE).
-useRealtime(['transaction', 'order'], fetchData)
+// Auto-update saat transaksi/order baru tersinkron dari outlet (SSE) —
+// silent: angka berubah di tempat, tanpa spinner/kedip.
+useRealtime(['transaction', 'order'], () => fetchData(true))
 
 // ── KPI card definitions ────────────────────────────────────
 const SPARK_COLOR = { emerald: '#10b981', blue: '#3b82f6', violet: '#8b5cf6', amber: '#f59e0b' }
@@ -383,13 +384,15 @@ const KPI_CARDS = [
 // ── Data fetching ───────────────────────────────────────────
 onMounted(fetchData)
 
-async function fetchData() {
-  loading.value = true
+async function fetchData(silent = false) {
+  // silent=true (update realtime): tanpa spinner, konten lama tetap tampil
+  // sampai data baru tiba lalu berganti di tempat.
+  if (silent !== true) loading.value = true
   errorMsg.value = ''
   try {
     data.value = await apiClient.get('/admin/manager-dashboard', { params: { date_from: range.value.from, date_to: range.value.to } })
   } catch (err) {
-    errorMsg.value = err?.message ?? 'Gagal memuat data dashboard.'
+    if (silent !== true) errorMsg.value = err?.message ?? 'Gagal memuat data dashboard.'
   } finally {
     loading.value = false
   }
