@@ -81,6 +81,7 @@ type UnpaidOrdersResponse struct {
 }
 
 type ProductSalesRow struct {
+	OutletName   string  `json:"outlet_name"`
 	ProductName  string  `json:"product_name"`
 	CategoryName string  `json:"category_name"`
 	TotalQty     int     `json:"total_qty"`
@@ -88,10 +89,14 @@ type ProductSalesRow struct {
 }
 
 type ProductSalesResponse struct {
-	DateFrom string            `json:"date_from"`
-	DateTo   string            `json:"date_to"`
-	Total    int               `json:"total"`
-	Items    []ProductSalesRow `json:"items"`
+	DateFrom     string            `json:"date_from"`
+	DateTo       string            `json:"date_to"`
+	Total        int               `json:"total"` // jumlah baris (produk × outlet) keseluruhan
+	Page         int               `json:"page"`
+	Limit        int               `json:"limit"`
+	TotalQty     int               `json:"total_qty"`     // grand total qty semua halaman
+	TotalRevenue float64           `json:"total_revenue"` // grand total pendapatan semua halaman
+	Items        []ProductSalesRow `json:"items"`
 }
 
 type TaxReportSummary struct {

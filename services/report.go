@@ -397,8 +397,12 @@ func GetUnpaidOrders(outletID, status, dateFrom, dateTo string, scopeIDs []strin
 	return report, nil
 }
 
-func GetProductSalesReport(dateFrom, dateTo, outletID string, scopeIDs []string) (*models.ProductSalesResponse, error) {
-	conds := []string{"o.created_at >= tz_day_start($1::date)", "o.created_at < tz_day_start($2::date + 1)"}
+func GetProductSalesReport(dateFrom, dateTo, outletID string, scopeIDs []string, page, limit int) (*models.ProductSalesResponse, error) {
+	conds := []string{
+		"o.created_at >= tz_day_start($1::date)", "o.created_at < tz_day_start($2::date + 1)",
+		// Order yang di-void bukan penjualan.
+		"NULLIF(o.payment_info->>'voided_at','') IS NULL",
+	}
 	args := []interface{}{dateFrom, dateTo}
 	idx := 3
 
@@ -420,32 +424,47 @@ func GetProductSalesReport(dateFrom, dateTo, outletID string, scopeIDs []string)
 	// Kategori: item order sering mengirim 'category'/'category_name' kosong, jadi
 	// di-resolve dari cloud_products (cocokkan nama produk dalam outlet yang sama)
 	// agar kolom Kategori tidak selalu "Tidak Berkategori".
+	// Baris di-grup per (outlet, produk, kategori); grand total dihitung lewat
+	// window function supaya kartu ringkasan & % kontribusi tetap mencakup SEMUA
+	// halaman meski daftarnya dipaginasi.
+	baseSub := fmt.Sprintf(`
+		SELECT
+			COALESCE(ot.name, o.outlet_code, '') AS outlet_name,
+			COALESCE(NULLIF(item->>'product_name', ''), 'Unknown') AS product_name,
+			COALESCE(
+				NULLIF(item->>'category_name', ''),
+				NULLIF(item->>'category', ''),
+				(SELECT p.category_name FROM cloud_products p
+				 WHERE p.outlet_id = o.outlet_id
+				   AND p.name = item->>'product_name'
+				   AND COALESCE(p.category_name, '') <> ''
+				   AND COALESCE(p.is_deleted, false) = false
+				 LIMIT 1),
+				'Tidak Berkategori'
+			) AS category_name,
+			COALESCE((item->>'qty')::int, 0) AS qty,
+			COALESCE((item->>'subtotal')::float8, COALESCE((item->>'price')::float8, 0) * COALESCE((item->>'qty')::int, 0)) AS revenue
+		FROM cloud_orders o
+		LEFT JOIN outlets ot ON ot.id = o.outlet_id,
+			jsonb_array_elements(COALESCE(o.items, '[]'::jsonb)) AS item
+		%s`, whereSQL)
+
+	offset := (page - 1) * limit
 	query := fmt.Sprintf(`
-		SELECT product_name, category_name,
-			SUM(qty) AS total_qty,
-			SUM(revenue) AS total_revenue
+		SELECT outlet_name, product_name, category_name, total_qty, total_revenue,
+			COUNT(*) OVER ()          AS grand_rows,
+			SUM(total_qty) OVER ()    AS grand_qty,
+			SUM(total_revenue) OVER () AS grand_revenue
 		FROM (
-			SELECT
-				COALESCE(NULLIF(item->>'product_name', ''), 'Unknown') AS product_name,
-				COALESCE(
-					NULLIF(item->>'category_name', ''),
-					NULLIF(item->>'category', ''),
-					(SELECT p.category_name FROM cloud_products p
-					 WHERE p.outlet_id = o.outlet_id
-					   AND p.name = item->>'product_name'
-					   AND COALESCE(p.category_name, '') <> ''
-					   AND COALESCE(p.is_deleted, false) = false
-					 LIMIT 1),
-					'Tidak Berkategori'
-				) AS category_name,
-				COALESCE((item->>'qty')::int, 0) AS qty,
-				COALESCE((item->>'subtotal')::float8, COALESCE((item->>'price')::float8, 0) * COALESCE((item->>'qty')::int, 0)) AS revenue
-			FROM cloud_orders o,
-				jsonb_array_elements(COALESCE(o.items, '[]'::jsonb)) AS item
-			%s
-		) sub
-		GROUP BY product_name, category_name
-		ORDER BY total_revenue DESC`, whereSQL)
+			SELECT outlet_name, product_name, category_name,
+				SUM(qty) AS total_qty,
+				SUM(revenue) AS total_revenue
+			FROM (%s) sub
+			GROUP BY outlet_name, product_name, category_name
+		) agg
+		ORDER BY total_revenue DESC
+		LIMIT $%d OFFSET $%d`, baseSub, idx, idx+1)
+	args = append(args, limit, offset)
 
 	rows, err := database.DB.Query(query, args...)
 	if err != nil {
@@ -453,24 +472,35 @@ func GetProductSalesReport(dateFrom, dateTo, outletID string, scopeIDs []string)
 	}
 	defer rows.Close()
 
-	items := make([]models.ProductSalesRow, 0)
+	resp := &models.ProductSalesResponse{
+		DateFrom: dateFrom,
+		DateTo:   dateTo,
+		Page:     page,
+		Limit:    limit,
+		Items:    make([]models.ProductSalesRow, 0),
+	}
 	for rows.Next() {
 		var r models.ProductSalesRow
-		if err := rows.Scan(&r.ProductName, &r.CategoryName, &r.TotalQty, &r.TotalRevenue); err != nil {
+		if err := rows.Scan(&r.OutletName, &r.ProductName, &r.CategoryName, &r.TotalQty, &r.TotalRevenue,
+			&resp.Total, &resp.TotalQty, &resp.TotalRevenue); err != nil {
 			return nil, err
 		}
-		items = append(items, r)
+		resp.Items = append(resp.Items, r)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	if len(resp.Items) == 0 && page > 1 {
+		// Halaman melewati akhir data: total tetap perlu diisi untuk pagination UI.
+		database.DB.QueryRow(fmt.Sprintf(`
+			SELECT COUNT(*), COALESCE(SUM(total_qty),0), COALESCE(SUM(total_revenue),0) FROM (
+				SELECT outlet_name, product_name, category_name,
+					SUM(qty) AS total_qty, SUM(revenue) AS total_revenue
+				FROM (%s) sub GROUP BY outlet_name, product_name, category_name) agg`, baseSub),
+			args[:len(args)-2]...).Scan(&resp.Total, &resp.TotalQty, &resp.TotalRevenue)
+	}
 
-	return &models.ProductSalesResponse{
-		DateFrom: dateFrom,
-		DateTo:   dateTo,
-		Total:    len(items),
-		Items:    items,
-	}, nil
+	return resp, nil
 }
 
 func GetTaxReport(dateFrom, dateTo, outletID string, scopeIDs []string) (*models.TaxReportResponse, error) {

@@ -5,14 +5,8 @@
     <AppCard>
       <div class="flex flex-wrap items-end gap-4">
         <div class="flex flex-col gap-1">
-          <label class="text-sm font-medium text-gray-700">Dari Tanggal</label>
-          <input type="date" v-model="dateFrom"
-            class="rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
-        </div>
-        <div class="flex flex-col gap-1">
-          <label class="text-sm font-medium text-gray-700">Sampai Tanggal</label>
-          <input type="date" v-model="dateTo"
-            class="rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+          <label class="text-sm font-medium text-gray-700">Rentang Tanggal</label>
+          <DateRangePicker v-model="range" />
         </div>
         <div class="flex flex-col gap-1 min-w-45">
           <label class="text-sm font-medium text-gray-700">Outlet</label>
@@ -114,34 +108,52 @@
         <div v-else class="overflow-x-auto">
           <table class="w-full text-sm">
             <thead>
-              <tr class="border-b border-gray-200">
+              <tr class="border-b border-gray-200 bg-gray-50/70">
                 <th class="text-left py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Waktu Void</th>
                 <th class="text-left py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Outlet</th>
-                <th class="text-left py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Meja</th>
-                <th class="text-left py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Pelanggan</th>
+                <th class="text-left py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Order</th>
                 <th class="text-left py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Item</th>
                 <th class="text-right py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Total</th>
-                <th class="text-left py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Di-void oleh</th>
-                <th class="text-left py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Alasan</th>
+                <th class="text-left py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Petugas & Alasan</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-100">
-              <tr v-for="row in report.data" :key="row.id" class="hover:bg-gray-50">
-                <td class="py-3 px-3 text-gray-600 whitespace-nowrap">{{ fmtDateTime(row.voided_at) }}</td>
-                <td class="py-3 px-3 font-medium text-gray-800">{{ row.outlet_name || '—' }}</td>
-                <td class="py-3 px-3 text-gray-600">{{ row.table_number || '—' }}</td>
-                <td class="py-3 px-3 text-gray-600">{{ row.customer_name || '—' }}</td>
-                <td class="py-3 px-3">
+              <tr v-for="row in report.data" :key="row.id" class="hover:bg-red-50/40 transition-colors">
+                <td class="py-3 px-3 whitespace-nowrap align-top">
+                  <p class="font-semibold text-gray-900 tabular-nums">{{ fmtTime(row.voided_at) }}</p>
+                  <p class="text-xs text-gray-400">{{ fmtDateShort(row.voided_at) }}</p>
+                  <p v-if="lifeSpan(row.created_at, row.voided_at)" class="text-[11px] text-amber-600 mt-0.5" title="Selang waktu order dibuat sampai di-void">⏱ {{ lifeSpan(row.created_at, row.voided_at) }}</p>
+                </td>
+                <td class="py-3 px-3 align-top">
+                  <span class="vr-pill"><span class="vr-dot" />{{ row.outlet_name || '—' }}</span>
+                </td>
+                <td class="py-3 px-3 align-top">
+                  <p class="font-medium text-gray-800">{{ row.customer_name || 'Tanpa nama' }}</p>
+                  <span v-if="row.table_number" class="vr-meja">Meja {{ row.table_number }}</span>
+                </td>
+                <td class="py-3 px-3 align-top max-w-[16rem]">
                   <div class="flex flex-wrap gap-1">
-                    <span v-for="item in parseItems(row.items)" :key="item.product_name"
-                      class="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-700 rounded text-xs">
-                      {{ item.qty }}× {{ item.product_name }}
+                    <span v-for="item in parseItems(row.items).slice(0, 3)" :key="item.product_name"
+                      class="vr-chip">{{ item.qty }}× {{ item.product_name }}</span>
+                    <span v-if="parseItems(row.items).length > 3" class="vr-chip vr-chip-more"
+                      :title="parseItems(row.items).map(i => `${i.qty}× ${i.product_name}`).join('\n')">
+                      +{{ parseItems(row.items).length - 3 }} lagi
                     </span>
                   </div>
+                  <p class="text-[11px] text-gray-400 mt-1">{{ itemsSummary(row.items) }}</p>
                 </td>
-                <td class="py-3 px-3 text-right font-semibold text-red-600">{{ formatRupiah(row.total_amount) }}</td>
-                <td class="py-3 px-3 text-gray-600">{{ row.voided_by || '—' }}</td>
-                <td class="py-3 px-3 text-gray-500 italic">{{ row.void_reason || '—' }}</td>
+                <td class="py-3 px-3 text-right align-top">
+                  <span class="font-bold text-red-600 tabular-nums">{{ formatRupiah(row.total_amount) }}</span>
+                </td>
+                <td class="py-3 px-3 align-top">
+                  <div class="flex items-start gap-2">
+                    <span class="vr-avatar">{{ initials(row.voided_by) }}</span>
+                    <div class="min-w-0">
+                      <p class="font-medium text-gray-800 leading-tight">{{ row.voided_by || '—' }}</p>
+                      <p class="text-xs text-gray-500 italic break-words">"{{ row.void_reason || 'Dibatalkan kasir' }}"</p>
+                    </div>
+                  </div>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -173,31 +185,45 @@
         <div v-else class="overflow-x-auto">
           <table class="w-full text-sm">
             <thead>
-              <tr class="border-b border-gray-200">
+              <tr class="border-b border-gray-200 bg-gray-50/70">
                 <th class="text-left py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Waktu Void</th>
                 <th class="text-left py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Outlet</th>
-                <th class="text-left py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Meja</th>
                 <th class="text-left py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Item</th>
                 <th class="text-right py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Subtotal</th>
-                <th class="text-left py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Pemesan</th>
-                <th class="text-left py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Di-void oleh</th>
-                <th class="text-left py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Alasan</th>
+                <th class="text-left py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Order</th>
+                <th class="text-left py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Petugas & Alasan</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-100">
-              <tr v-for="row in report.items" :key="row.id" class="hover:bg-gray-50">
-                <td class="py-3 px-3 text-gray-600 whitespace-nowrap">{{ fmtDateTime(row.voided_at) }}</td>
-                <td class="py-3 px-3 font-medium text-gray-800">{{ row.outlet_name || '—' }}</td>
-                <td class="py-3 px-3 text-gray-600">{{ row.table_number || '—' }}</td>
-                <td class="py-3 px-3">
-                  <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-700 rounded text-xs">
-                    {{ Number(row.qty) }}× {{ row.product_name }}
-                  </span>
+              <tr v-for="row in report.items" :key="row.id" class="hover:bg-red-50/40 transition-colors">
+                <td class="py-3 px-3 whitespace-nowrap align-top">
+                  <p class="font-semibold text-gray-900 tabular-nums">{{ fmtTime(row.voided_at) }}</p>
+                  <p class="text-xs text-gray-400">{{ fmtDateShort(row.voided_at) }}</p>
                 </td>
-                <td class="py-3 px-3 text-right font-semibold text-red-600">{{ formatRupiah(row.subtotal) }}</td>
-                <td class="py-3 px-3 text-gray-600">{{ row.waiter_name || '—' }}</td>
-                <td class="py-3 px-3 text-gray-600">{{ row.voided_by || '—' }}</td>
-                <td class="py-3 px-3 text-gray-500 italic">{{ row.void_reason || '—' }}</td>
+                <td class="py-3 px-3 align-top">
+                  <span class="vr-pill"><span class="vr-dot" />{{ row.outlet_name || '—' }}</span>
+                </td>
+                <td class="py-3 px-3 align-top">
+                  <p class="font-medium text-gray-800">{{ row.product_name }}</p>
+                  <p class="text-xs text-gray-400 tabular-nums">{{ Number(row.qty) }} × {{ formatRupiah(row.price) }}</p>
+                </td>
+                <td class="py-3 px-3 text-right align-top">
+                  <span class="font-bold text-red-600 tabular-nums">{{ formatRupiah(row.subtotal) }}</span>
+                </td>
+                <td class="py-3 px-3 align-top">
+                  <span v-if="row.table_number" class="vr-meja">Meja {{ row.table_number }}</span>
+                  <p v-if="row.waiter_name" class="text-xs text-gray-500 mt-0.5">Pemesan: <span class="font-medium text-gray-700">{{ row.waiter_name }}</span></p>
+                  <span v-if="!row.table_number && !row.waiter_name" class="text-gray-400">—</span>
+                </td>
+                <td class="py-3 px-3 align-top">
+                  <div class="flex items-start gap-2">
+                    <span class="vr-avatar">{{ initials(row.voided_by) }}</span>
+                    <div class="min-w-0">
+                      <p class="font-medium text-gray-800 leading-tight">{{ row.voided_by || '—' }}</p>
+                      <p class="text-xs text-gray-500 italic break-words">"{{ row.void_reason || 'Dibatalkan kasir' }}"</p>
+                    </div>
+                  </div>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -224,16 +250,19 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { apiClient } from '@/api/client.js'
 import { outletsApi } from '@/api/outlets.js'
 import AppCard    from '@/components/ui/AppCard.vue'
 import AppAlert   from '@/components/ui/AppAlert.vue'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
 import SearchSelect from '@/components/ui/SearchSelect.vue'
+import DateRangePicker from '@/components/ui/DateRangePicker.vue'
 
 const dateFrom      = ref(new Date(new Date().setDate(1)).toISOString().slice(0,10))
 const dateTo        = ref(new Date().toISOString().slice(0,10))
+const range          = ref({ from: dateFrom.value, to: dateTo.value, label: 'Bulan Ini' })
+watch(range, (r) => { dateFrom.value = r.from; dateTo.value = r.to; page.value = 1; fetchReport() })
 const selectedOutlet = ref('')
 const outletOptions  = ref([{ value: '', label: 'Semua Outlet' }])
 const report        = ref(null)
@@ -296,4 +325,51 @@ function fmtDateTime(str) {
     hour: '2-digit', minute: '2-digit',
   })
 }
+
+function fmtTime(str) {
+  if (!str) return '—'
+  const d = new Date(str)
+  return isNaN(d) ? '—' : d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+}
+
+function fmtDateShort(str) {
+  if (!str) return ''
+  const d = new Date(str)
+  return isNaN(d) ? '' : d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+// Selang order dibuat → di-void; void yang terlalu cepat/lama bisa jadi sinyal
+// pola yang perlu dicek (mis. void rutin sesaat setelah input).
+function lifeSpan(createdStr, voidedStr) {
+  if (!createdStr || !voidedStr) return ''
+  const a = new Date(createdStr), b = new Date(voidedStr)
+  if (isNaN(a) || isNaN(b)) return ''
+  let mins = Math.round((b - a) / 60000)
+  if (mins < 0 || mins > 60 * 24 * 30) return ''
+  if (mins < 1) return 'di-void < 1 mnt'
+  if (mins < 60) return `di-void setelah ${mins} mnt`
+  const h = Math.floor(mins / 60)
+  return `di-void setelah ${h} jam ${mins % 60} mnt`
+}
+
+function itemsSummary(raw) {
+  const items = parseItems(raw)
+  if (!items.length) return ''
+  const qty = items.reduce((s, i) => s + (Number(i.qty) || 0), 0)
+  return `${items.length} item · ${qty} qty`
+}
+
+function initials(name) {
+  if (!name) return '?'
+  return name.trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase()
+}
 </script>
+
+<style scoped>
+.vr-pill { display: inline-flex; align-items: center; gap: .4rem; padding: .2rem .6rem; border-radius: 999px; background: rgba(16,185,129,.08); border: 1px solid rgba(16,185,129,.2); font-size: .75rem; font-weight: 600; color: #065f46; white-space: nowrap; }
+.vr-dot { width: 6px; height: 6px; border-radius: 50%; background: #10b981; flex-shrink: 0; }
+.vr-meja { display: inline-block; padding: .1rem .5rem; border-radius: .4rem; background: rgba(59,130,246,.09); color: #1d4ed8; font-size: .7rem; font-weight: 700; }
+.vr-chip { display: inline-flex; align-items: center; padding: .12rem .5rem; border-radius: .45rem; background: #f3f4f6; color: #374151; font-size: .72rem; white-space: nowrap; max-width: 11rem; overflow: hidden; text-overflow: ellipsis; }
+.vr-chip-more { background: rgba(239,68,68,.08); color: #b91c1c; font-weight: 700; cursor: help; }
+.vr-avatar { display: inline-flex; align-items: center; justify-content: center; width: 1.85rem; height: 1.85rem; border-radius: 50%; background: rgba(239,68,68,.1); color: #b91c1c; font-size: .68rem; font-weight: 800; flex-shrink: 0; }
+</style>

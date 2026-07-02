@@ -68,8 +68,9 @@ func GetProductSalesReport(c *fiber.Ctx) error {
 	}
 
 	scopeIDs := getOutletScope(c)
+	page, limit := getPagination(c)
 
-	report, err := services.GetProductSalesReport(dateFrom, dateTo, outletID, scopeIDs)
+	report, err := services.GetProductSalesReport(dateFrom, dateTo, outletID, scopeIDs, page, limit)
 	if err != nil {
 		log.Printf("GetProductSalesReport error: %v", err)
 		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{

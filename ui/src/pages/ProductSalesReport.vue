@@ -5,14 +5,8 @@
     <AppCard>
       <div class="flex flex-wrap items-end gap-4">
         <div class="flex flex-col gap-1">
-          <label class="text-sm font-medium text-gray-700">Dari Tanggal</label>
-          <input type="date" v-model="dateFrom"
-            class="rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
-        </div>
-        <div class="flex flex-col gap-1">
-          <label class="text-sm font-medium text-gray-700">Sampai Tanggal</label>
-          <input type="date" v-model="dateTo"
-            class="rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+          <label class="text-sm font-medium text-gray-700">Rentang Tanggal</label>
+          <DateRangePicker v-model="range" />
         </div>
         <div class="flex flex-col gap-1 min-w-45">
           <label class="text-sm font-medium text-gray-700">Outlet</label>
@@ -25,7 +19,7 @@
             labelKey="label"
           />
         </div>
-        <button @click="fetchReport"
+        <button @click="applyFilter"
           class="px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors shadow-sm">
           Tampilkan
         </button>
@@ -65,13 +59,16 @@
             </div>
           </template>
         </AppTable>
+        <div v-if="report.total > PER_PAGE" class="px-4 py-3 border-t border-gray-100">
+          <AppPagination v-model="page" :total="report.total" :per-page="PER_PAGE" />
+        </div>
       </AppCard>
     </template>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { salesApi }    from '@/api/sales.js'
 import { outletsApi }  from '@/api/outlets.js'
 import { formatRupiah, formatDateStr, todayDateString } from '@/utils/format.js'
@@ -81,10 +78,17 @@ import AppAlert     from '@/components/ui/AppAlert.vue'
 import AppSpinner   from '@/components/ui/AppSpinner.vue'
 import SearchSelect from '@/components/ui/SearchSelect.vue'
 import SummaryCard  from '@/components/SummaryCard.vue'
+import AppPagination from '@/components/ui/AppPagination.vue'
+import DateRangePicker from '@/components/ui/DateRangePicker.vue'
 
 const today = todayDateString()
 const dateFrom       = ref(today)
 const dateTo         = ref(today)
+const range          = ref({ from: dateFrom.value, to: dateTo.value, label: 'Hari Ini' })
+const PER_PAGE       = 25
+const page           = ref(1)
+watch(range, (r) => { dateFrom.value = r.from; dateTo.value = r.to; applyFilter() })
+watch(page, fetchReport)
 const selectedOutlet = ref('')
 const outletOptions  = ref([])
 const loading        = ref(false)
@@ -93,18 +97,25 @@ const report         = ref(null)
 
 const COLUMNS = [
   { key: 'product_name',  label: 'Nama Produk' },
+  { key: 'outlet_name',   label: 'Outlet' },
   { key: 'category_name', label: 'Kategori' },
   { key: 'total_qty',     label: 'Qty', align: 'right' },
   { key: 'total_revenue', label: 'Pendapatan', align: 'right' },
   { key: 'pct',           label: '% Kontribusi' },
 ]
 
-const totalQty     = computed(() => report.value?.items?.reduce((s, r) => s + r.total_qty, 0) ?? 0)
-const totalRevenue = computed(() => report.value?.items?.reduce((s, r) => s + r.total_revenue, 0) ?? 0)
+// Grand total dari server (mencakup semua halaman, bukan cuma halaman aktif).
+const totalQty     = computed(() => report.value?.total_qty ?? 0)
+const totalRevenue = computed(() => report.value?.total_revenue ?? 0)
 
 function pct(val) {
   if (!totalRevenue.value) return 0
   return Math.round((val / totalRevenue.value) * 1000) / 10
+}
+
+function applyFilter() {
+  if (page.value === 1) fetchReport()
+  else page.value = 1
 }
 
 onMounted(async () => {
@@ -120,7 +131,7 @@ async function fetchReport() {
   loading.value = true
   errorMsg.value = ''
   try {
-    const params = { date_from: dateFrom.value, date_to: dateTo.value }
+    const params = { date_from: dateFrom.value, date_to: dateTo.value, page: page.value, limit: PER_PAGE }
     if (selectedOutlet.value) params.outlet_id = selectedOutlet.value
     report.value = await salesApi.getProductSalesReport(params)
   } catch (err) {
