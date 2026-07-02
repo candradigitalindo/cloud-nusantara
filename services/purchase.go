@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/lib/pq"
@@ -258,15 +259,23 @@ func CreatePurchaseRequest(input models.CreatePurchaseRequestInput) (*models.Pur
 	}
 
 	now := time.Now().UTC()
-	reqNumber, err := generateRequestNumber(now)
-	if err != nil {
-		return nil, fmt.Errorf("gagal generate nomor pengajuan: %w", err)
-	}
-	_, err = database.DB.Exec(`
-		INSERT INTO purchase_requests (id, request_number, outlet_id, work_unit_id, request_type, requested_by, vendor_id, vendor_name, status, items, total_amount, total_hps, total_final, notes, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', $9, $10, $11, $12, $13, $14, $14)
-	`, id, reqNumber, nilIfEmpty(input.OutletID), nilIfEmpty(input.WorkUnitID), input.RequestType, input.RequestedBy, nilIfEmpty(input.VendorID), input.VendorName, itemsJSON, total, totalHps, totalFinal, input.Notes, now)
-	if err != nil {
+	// Nomor dihitung dari MAX() tanpa lock — dua pengajuan bersamaan bisa dapat
+	// nomor sama. Unique index menolak duplikatnya; retry dengan nomor baru.
+	for attempt := 0; ; attempt++ {
+		reqNumber, err := generateRequestNumber(now)
+		if err != nil {
+			return nil, fmt.Errorf("gagal generate nomor pengajuan: %w", err)
+		}
+		_, err = database.DB.Exec(`
+			INSERT INTO purchase_requests (id, request_number, outlet_id, work_unit_id, request_type, requested_by, vendor_id, vendor_name, status, items, total_amount, total_hps, total_final, notes, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', $9, $10, $11, $12, $13, $14, $14)
+		`, id, reqNumber, nilIfEmpty(input.OutletID), nilIfEmpty(input.WorkUnitID), input.RequestType, input.RequestedBy, nilIfEmpty(input.VendorID), input.VendorName, itemsJSON, total, totalHps, totalFinal, input.Notes, now)
+		if err == nil {
+			break
+		}
+		if attempt < 3 && strings.Contains(err.Error(), "uq_purchase_requests_number") {
+			continue
+		}
 		return nil, err
 	}
 
@@ -691,9 +700,19 @@ func applyStatusUpdate(id, newStatus string, input models.UpdatePurchaseStatusIn
 			newStatus, now, id,
 		)
 	case "pay":
-		// Determine payment amount
+		// Satu transaksi DB dengan FOR UPDATE: dua pembayaran bersamaan (double
+		// click / retry) tidak boleh sama-sama membaca paid_amount lama — tanpa
+		// lock ini histori pembayaran bisa dobel dan status jadi tidak konsisten.
+		tx, txErr := database.DB.Begin()
+		if txErr != nil {
+			return nil, txErr
+		}
+		defer tx.Rollback()
+
 		var totalFinal, currentPaid float64
-		database.DB.QueryRow("SELECT COALESCE(total_final,0), COALESCE(paid_amount,0) FROM purchase_requests WHERE id=$1", id).Scan(&totalFinal, &currentPaid)
+		if scanErr := tx.QueryRow("SELECT COALESCE(total_final,0), COALESCE(paid_amount,0) FROM purchase_requests WHERE id=$1 FOR UPDATE", id).Scan(&totalFinal, &currentPaid); scanErr != nil {
+			return nil, fmt.Errorf("gagal memeriksa tagihan: %w", scanErr)
+		}
 		remaining := totalFinal - currentPaid
 
 		if remaining <= 0 {
@@ -714,7 +733,7 @@ func applyStatusUpdate(id, newStatus string, input models.UpdatePurchaseStatusIn
 
 		// Insert payment history
 		phID := NewULID()
-		_, err = database.DB.Exec(
+		_, err = tx.Exec(
 			`INSERT INTO payment_histories (id, purchase_request_id, amount, payment_proof, payment_account_dest, payment_account_source, payment_notes, paid_by, created_at)
 			 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
 			phID, id, payAmount, input.PaymentProof,
@@ -731,7 +750,7 @@ func applyStatusUpdate(id, newStatus string, input models.UpdatePurchaseStatusIn
 			actualStatus = "paid"
 		}
 
-		_, err = database.DB.Exec(
+		_, err = tx.Exec(
 			`UPDATE purchase_requests SET status=$1, paid_by=$2, paid_at=$3, payment_proof=$4,
 			 payment_account_dest=$5, payment_account_source=$6, payment_notes=$7,
 			 paid_amount=$8, updated_at=$3 WHERE id=$9`,
@@ -739,6 +758,9 @@ func applyStatusUpdate(id, newStatus string, input models.UpdatePurchaseStatusIn
 			input.PaymentAccountDest, input.PaymentAccountSource, input.PaymentNotes,
 			newPaid, id,
 		)
+		if err == nil {
+			err = tx.Commit()
+		}
 	case "receive":
 		_, err = database.DB.Exec(
 			"UPDATE purchase_requests SET status=$1, received_by=$2, received_at=$3, updated_at=$3 WHERE id=$4",

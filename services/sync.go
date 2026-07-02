@@ -85,6 +85,15 @@ func SaveCashierShift(outletID string, req models.PushCashierShiftRequest) (stri
 		}
 	}
 
+	// opened_at kolomnya NOT NULL. Payload dengan opened_at kosong/tak terparse
+	// sebelumnya gagal INSERT dan di-retry device selamanya (item macet permanen
+	// di outbox). Fallback ke waktu sekarang + catat, daripada menolak shift-nya.
+	openedAt := parseTime(req.OpenedAt)
+	if _, ok := openedAt.(time.Time); !ok {
+		log.Printf("SaveCashierShift: opened_at kosong/tak valid (outlet=%s local_id=%s raw=%q), fallback ke NOW", outletID, req.LocalID, req.OpenedAt)
+		openedAt = time.Now().UTC()
+	}
+
 	err := database.DB.QueryRow(
 		`INSERT INTO cloud_cashier_shifts (id, local_id, outlet_id, opened_by, opened_at,
 			opening_cash, closed_at, closed_by, closing_cash, closing_card, closing_qris,
@@ -111,7 +120,7 @@ func SaveCashierShift(outletID string, req models.PushCashierShiftRequest) (stri
 			updated_at = NOW(),
 			synced_at = NOW()
 		RETURNING id`,
-		cloudID, cloudID, outletID, req.OpenedBy, parseTime(req.OpenedAt),
+		cloudID, cloudID, outletID, req.OpenedBy, openedAt,
 		req.OpeningCash, closedAt, req.ClosedBy, req.ClosingCash, req.ClosingCard,
 		req.ClosingQris, req.ClosingTransfer, req.CarryOverCash, req.PreviousShiftID,
 		req.HandoverTo, req.Status, req.Notes, reportJSON,
@@ -478,8 +487,19 @@ func ProcessBatchSync(outletID string, req models.BatchSyncRequest) models.Batch
 			result.LocalID = localID
 			result.Status = "success"
 			result.CloudID = localID
+			// Dijawab "success" agar device tidak retry selamanya, tapi dicatat di
+			// sync_logs: item tipe ini TIDAK dipersistenkan — bila tipenya kelak
+			// diimplementasikan, data historis periode ini tidak akan dikirim ulang.
 			log.Printf("Entity type '%s' not handled by cloud, skipping", item.EntityType)
+			go logSync(outletID, "batch_sync_item", item.EntityType, 1, "skipped", localID+": entity type tidak dikenal, tidak disimpan")
 			resp.Success++
+		}
+
+		// Persistenkan kegagalan per-item: tanpa ini server hanya menyimpan agregat
+		// "N of M items failed" dan item yang macet tak pernah bisa didiagnosis.
+		if result.Status == "failed" {
+			go logSync(outletID, "batch_sync_item", item.EntityType, 1, "failed",
+				result.LocalID+": "+result.Error)
 		}
 
 		resp.Results = append(resp.Results, result)
@@ -503,7 +523,10 @@ func GetUpdatesSince(outletID, since string) (*models.UpdatesResponse, error) {
 	sinceRaw := parseTime(since)
 	var sinceTime interface{}
 	if t, ok := sinceRaw.(time.Time); ok {
-		sinceTime = t.Local()
+		// Kolom updated_at bertipe timestamp tanpa zona berisi wall-clock UTC;
+		// t.Local() menggeser cursor sebesar offset zona OS host (kebetulan benar
+		// hanya bila host UTC). Selalu bandingkan dalam UTC.
+		sinceTime = t.UTC()
 	} else {
 		sinceTime = sinceRaw
 	}

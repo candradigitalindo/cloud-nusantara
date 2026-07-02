@@ -1088,6 +1088,20 @@ func ListStockTransfers(status, warehouseID string, outletIDs []string, page, li
 	return result, total, nil
 }
 
+// WarehouseMutableInScope reports whether the scoped user may MUTATE stock in this
+// warehouse: gudang pusat (outlet_id NULL) atau gudang milik outlet dalam scope.
+// nil = all. Dipakai untuk menutup mutasi lintas-outlet lewat warehouse_id di body.
+func WarehouseMutableInScope(warehouseID string, outletIDs []string) bool {
+	if outletIDs == nil {
+		return true
+	}
+	var cnt int
+	database.DB.QueryRow(
+		`SELECT COUNT(*) FROM warehouses WHERE id = $1 AND (outlet_id IS NULL OR outlet_id = ANY($2))`,
+		warehouseID, pq.Array(outletIDs)).Scan(&cnt)
+	return cnt > 0
+}
+
 // TransferInScope reports whether a transfer involves a warehouse the scoped user
 // may access (its from- or to-warehouse belongs to an in-scope outlet). nil = all.
 func TransferInScope(transferID string, outletIDs []string) bool {
@@ -1271,6 +1285,21 @@ func UpdateTransferStatus(id, newStatus, actor string) (*models.StockTransfer, e
 	}
 	defer tx.Rollback()
 
+	// Kunci baris & validasi ulang di dalam transaksi. Cek di atas berjalan di luar
+	// lock, jadi dua request bersamaan (double-click / retry) bisa sama-sama lolos
+	// dan menerapkan mutasi stok dua kali tanpa guard ini.
+	var curStatus string
+	if err := tx.QueryRow(`SELECT status FROM stock_transfers WHERE id=$1 FOR UPDATE`, id).Scan(&curStatus); err != nil {
+		return nil, err
+	}
+	if newStatus == "cancelled" {
+		if !cancelable[curStatus] {
+			return nil, fmt.Errorf("transfer status '%s' tidak dapat dibatalkan", curStatus)
+		}
+	} else if validFlow[curStatus] != newStatus {
+		return nil, fmt.Errorf("transisi status tidak valid: %s → %s", curStatus, newStatus)
+	}
+
 	now := time.Now()
 	switch newStatus {
 	case "approved":
@@ -1299,10 +1328,19 @@ func UpdateTransferStatus(id, newStatus, actor string) (*models.StockTransfer, e
 	case "received":
 		// Tambah stok ke gudang tujuan
 		for _, it := range transfer.Items {
-			// Ambil avg_cost dari gudang asal untuk diteruskan ke gudang tujuan
+			// Nilai barang masuk = cost FIFO yang benar-benar terpotong saat "sent"
+			// (tercatat di movement transfer_out). avg_cost live gudang asal bisa
+			// sudah berubah oleh pembelian baru di antara kirim dan terima.
 			var avgCost float64
-			if err := tx.QueryRow(`SELECT avg_cost FROM stock_ledger WHERE item_id=$1 AND warehouse_id=$2`, it.ItemID, transfer.FromWarehouseID).Scan(&avgCost); err != nil {
-				return nil, fmt.Errorf("gagal baca avg_cost dari gudang asal: %w", err)
+			err := tx.QueryRow(`
+				SELECT cost_per_base FROM stock_movements
+				WHERE ref_id=$1 AND ref_type='stock_transfer' AND item_id=$2 AND movement_type='transfer_out'
+				ORDER BY created_at DESC LIMIT 1`, id, it.ItemID).Scan(&avgCost)
+			if err != nil {
+				// Fallback transfer lama (dikirim sebelum cost tercatat): avg_cost gudang asal.
+				if err := tx.QueryRow(`SELECT avg_cost FROM stock_ledger WHERE item_id=$1 AND warehouse_id=$2`, it.ItemID, transfer.FromWarehouseID).Scan(&avgCost); err != nil {
+					return nil, fmt.Errorf("gagal baca cost dari gudang asal: %w", err)
+				}
 			}
 			
 			recvQty := it.QtyBase
@@ -1986,7 +2024,15 @@ func GetWarehouseDashboard(outletIDs []string) (*models.WarehouseDashboardStats,
 	}
 
 	// ── 10. Transfer pending list (maks 5) ───────────────────
+	// Ikut scope outlet: user ber-scope hanya melihat transfer yang menyentuh
+	// gudang pusat atau gudang outlet-nya (konsisten dengan blok lain di atas).
 	stats.PendingTransferList = []models.StockTransfer{}
+	ptScope := ""
+	var ptArgs []interface{}
+	if outletIDs != nil {
+		ptScope = ` AND (fw.outlet_id = ANY($1) OR fw.type = 'central' OR tw.outlet_id = ANY($1) OR tw.type = 'central')`
+		ptArgs = append(ptArgs, pq.Array(outletIDs))
+	}
 	ptRows, ptErr := database.DB.Query(`
 		SELECT st.id, st.transfer_number,
 			st.from_warehouse_id, fw.name,
@@ -1998,8 +2044,8 @@ func GetWarehouseDashboard(outletIDs []string) (*models.WarehouseDashboardStats,
 		FROM stock_transfers st
 		JOIN warehouses fw ON fw.id = st.from_warehouse_id
 		JOIN warehouses tw ON tw.id = st.to_warehouse_id
-		WHERE st.status NOT IN ('received','cancelled')
-		ORDER BY st.created_at DESC LIMIT 5`)
+		WHERE st.status NOT IN ('received','cancelled')`+ptScope+`
+		ORDER BY st.created_at DESC LIMIT 5`, ptArgs...)
 	if ptErr == nil {
 		defer ptRows.Close()
 		for ptRows.Next() {

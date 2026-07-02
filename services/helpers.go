@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"log"
 	"sync"
 	"time"
 
@@ -97,6 +98,9 @@ func parseTime(s string) interface{} {
 		}
 	}
 
+	// Fallback diam-diam ke "sekarang" menggeser data ke tanggal sync — minimal
+	// tinggalkan jejak supaya timestamp korup dari client bisa terdeteksi.
+	log.Printf("parseTime: format tidak dikenali %q, fallback ke NOW", s)
 	return time.Now().UTC()
 }
 

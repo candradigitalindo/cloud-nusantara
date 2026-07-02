@@ -57,6 +57,7 @@ func SaveOrder(outletID string, req models.PushOrderRequest) (string, error) {
 			status = EXCLUDED.status,
 			items = EXCLUDED.items,
 			payment_info = EXCLUDED.payment_info,
+			version = EXCLUDED.version,
 			updated_at = EXCLUDED.updated_at,
 			synced_at = NOW()
 		RETURNING id`,
@@ -204,9 +205,13 @@ func SaveTransaction(outletID string, req models.PushTransactionRequest) (string
 	// (delete + insert) agar re-sync transaksi yang sama tidak menggandakan baris.
 	// created_at memakai tanggal transaksi agar rekap per-metode konsisten dengan
 	// laporan yang berbasis tanggal transaksi.
+	// Gagal menulis rincian pembayaran harus mengembalikan error (bukan sekadar log):
+	// bila dilapor sukses, device tidak akan retry dan rekap per-metode kurang selamanya.
+	// Upsert header + delete/insert di sini idempotent, jadi retry aman.
 	txCreatedAt := createdAt
 	if _, derr := database.DB.Exec(`DELETE FROM transaction_payments WHERE transaction_id = $1`, cloudID); derr != nil {
 		log.Printf("clear transaction_payments (tx=%s): %v", cloudID, derr)
+		return "", fmt.Errorf("gagal menulis rincian pembayaran: %w", derr)
 	}
 	lines := req.Payments
 	if len(lines) == 0 {
@@ -232,6 +237,7 @@ func SaveTransaction(outletID string, req models.PushTransactionRequest) (string
 			cloudID, outletID, method, p.Amount, note, txCreatedAt,
 		); derr != nil {
 			log.Printf("insert transaction_payment (tx=%s method=%s): %v", cloudID, method, derr)
+			return "", fmt.Errorf("gagal menulis rincian pembayaran: %w", derr)
 		}
 	}
 
