@@ -63,11 +63,15 @@ func ListAssets(outletID, search, condition string, outletScope []string) ([]mod
 		SELECT a.id, a.outlet_id, COALESCE(o.name, ''), a.code, a.name, a.category,
 		       a.quantity, a.unit, a.condition, a.location,
 		       COALESCE(TO_CHAR(a.purchase_date, 'YYYY-MM-DD'), ''), a.purchase_price, a.notes,
-		       (SELECT COUNT(*) FROM asset_maintenances m WHERE m.asset_id = a.id)::int,
-		       COALESCE((SELECT TO_CHAR(MAX(m.maintenance_date), 'YYYY-MM-DD') FROM asset_maintenances m WHERE m.asset_id = a.id), ''),
+		       COALESCE(m.cnt, 0)::int,
+		       COALESCE(m.last_date, ''),
 		       a.created_at, a.updated_at
 		FROM assets a
 		LEFT JOIN outlets o ON o.id = a.outlet_id
+		LEFT JOIN (
+			SELECT asset_id, COUNT(*) AS cnt, TO_CHAR(MAX(maintenance_date), 'YYYY-MM-DD') AS last_date
+			FROM asset_maintenances GROUP BY asset_id
+		) m ON m.asset_id = a.id
 		WHERE %s
 		ORDER BY a.created_at DESC`, strings.Join(conds, " AND "))
 

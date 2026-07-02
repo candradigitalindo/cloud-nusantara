@@ -39,12 +39,12 @@ func GetCashierShiftReport(outletID, status, dateFrom, dateTo string, outletScop
 		idx++
 	}
 	if dateFrom != "" {
-		conds = append(conds, fmt.Sprintf("tz_date(s.created_at) >= $%d::date", idx))
+		conds = append(conds, fmt.Sprintf("s.created_at >= tz_day_start($%d::date)", idx))
 		args = append(args, dateFrom)
 		idx++
 	}
 	if dateTo != "" {
-		conds = append(conds, fmt.Sprintf("tz_date(s.created_at) <= $%d::date", idx))
+		conds = append(conds, fmt.Sprintf("s.created_at < tz_day_start($%d::date + 1)", idx))
 		args = append(args, dateTo)
 		idx++
 	}

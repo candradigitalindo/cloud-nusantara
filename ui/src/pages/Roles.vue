@@ -550,6 +550,10 @@ async function loadRoles() {
   } finally { loading.value = false }
 }
 
+// Antrean simpan per sesi: dua klik cepat menghasilkan dua PUT full-list yang bisa
+// selesai tidak berurutan — response lama menimpa toggle yang lebih baru di DB.
+let saveQueue = Promise.resolve()
+
 async function togglePermission(role, perm) {
   if (roles.value.find(r => r.name === role)?.is_system) return
 
@@ -577,16 +581,21 @@ async function togglePermission(role, perm) {
 
   rolePermissions.value = { ...rolePermissions.value, [role]: updated }
   savingRole.value = role
-  try {
-    await adminsApi.updatePermissions(role, { permissions: updated })
-    toast.success(`Hak akses ${role} diperbarui`)
-    if (role === authStore.admin?.role) await authStore.fetchPermissions()
-  } catch (err) {
-    rolePermissions.value = { ...rolePermissions.value, [role]: current }
-    toast.error(err?.message ?? 'Gagal memperbarui hak akses')
-  } finally {
-    savingRole.value = ''
-  }
+  saveQueue = saveQueue.then(async () => {
+    try {
+      // Kirim snapshot TERKINI (bukan `updated` saat klik) supaya toggle yang
+      // menyusul selama request sebelumnya ikut tersimpan.
+      await adminsApi.updatePermissions(role, { permissions: rolePermissions.value[role] ?? [] })
+      toast.success(`Hak akses ${role} diperbarui`)
+      if (role === authStore.admin?.role) await authStore.fetchPermissions()
+    } catch (err) {
+      rolePermissions.value = { ...rolePermissions.value, [role]: current }
+      toast.error(err?.message ?? 'Gagal memperbarui hak akses')
+    } finally {
+      savingRole.value = ''
+    }
+  })
+  await saveQueue
 }
 
 function toggleFormPermission(perm) {

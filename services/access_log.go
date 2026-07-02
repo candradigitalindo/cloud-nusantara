@@ -86,12 +86,12 @@ func ListAccessLogs(search, status, dateFrom, dateTo string, page, limit int) ([
 		i++
 	}
 	if dateFrom != "" {
-		where += fmt.Sprintf(" AND tz_date(created_at) >= $%d::date", i)
+		where += fmt.Sprintf(" AND created_at >= tz_day_start($%d::date)", i)
 		args = append(args, dateFrom)
 		i++
 	}
 	if dateTo != "" {
-		where += fmt.Sprintf(" AND tz_date(created_at) <= $%d::date", i)
+		where += fmt.Sprintf(" AND created_at < tz_day_start($%d::date + 1)", i)
 		args = append(args, dateTo)
 		i++
 	}

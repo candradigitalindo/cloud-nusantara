@@ -623,6 +623,16 @@ func RunMigrations() error {
 				'Asia/Jakarta'
 			))::date;
 		$$ LANGUAGE sql STABLE`,
+		// SQL function: awal hari lokal d sebagai wall-clock UTC (tipe kolom kita).
+		// Dipakai di WHERE sebagai konstanta: "created_at >= tz_day_start($1)" bisa
+		// pakai index, berbeda dengan "tz_date(created_at) >= $1" yang membungkus
+		// kolom dan memaksa full scan.
+		`CREATE OR REPLACE FUNCTION tz_day_start(d DATE) RETURNS TIMESTAMP AS $$
+			SELECT ((d::timestamp) AT TIME ZONE COALESCE(
+				(SELECT value FROM app_settings WHERE key = 'timezone'),
+				'Asia/Jakarta'
+			)) AT TIME ZONE 'UTC';
+		$$ LANGUAGE sql STABLE`,
 		// Tax settings
 		`INSERT INTO app_settings (key, value) VALUES
 			('tax_enabled', 'false'),
@@ -1365,6 +1375,31 @@ func RunMigrations() error {
 	for _, m := range itemVoidMigrations {
 		if _, err := DB.Exec(m); err != nil {
 			log.Printf("Order item void migration skipped: %v", err)
+		}
+	}
+
+	// ── Index tambahan untuk pola WHERE yang sering dipakai laporan & sync ──
+	// Tabel-tabel ini difilter per (outlet, tanggal) / status / vendor di hampir
+	// semua laporan tapi sebelumnya hanya punya index satu-kolom (atau tidak ada).
+	perfIndexes := []string{
+		`CREATE INDEX IF NOT EXISTS idx_cloud_transactions_outlet_created ON cloud_transactions(outlet_id, created_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_cloud_orders_outlet_created ON cloud_orders(outlet_id, created_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_purchase_requests_paid_at ON purchase_requests(paid_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_purchase_requests_vendor ON purchase_requests(vendor_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_cloud_cash_movements_created ON cloud_cash_movements(created_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_cloud_categories_updated ON cloud_categories(updated_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_stock_transfers_status ON stock_transfers(status)`,
+		`CREATE INDEX IF NOT EXISTS idx_stock_transfers_from_wh ON stock_transfers(from_warehouse_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_stock_transfers_to_wh ON stock_transfers(to_warehouse_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_stock_wastes_wh_created ON stock_wastes(warehouse_id, created_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_cloud_products_outlet_name ON cloud_products(outlet_id, name)`,
+		// Nomor pengajuan pengadaan harus unik (generator MAX()+1 bisa balapan;
+		// call site melakukan retry saat index ini menolak duplikat).
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_purchase_requests_number ON purchase_requests(request_number)`,
+	}
+	for _, m := range perfIndexes {
+		if _, err := DB.Exec(m); err != nil {
+			log.Printf("Perf index migration skipped: %v", err)
 		}
 	}
 

@@ -21,6 +21,7 @@ func Connect(cfg *config.Config) error {
 	DB.SetMaxOpenConns(25)
 	DB.SetMaxIdleConns(5)
 	DB.SetConnMaxLifetime(5 * time.Minute)
+	DB.SetConnMaxIdleTime(2 * time.Minute)
 
 	if err = DB.Ping(); err != nil {
 		return err
