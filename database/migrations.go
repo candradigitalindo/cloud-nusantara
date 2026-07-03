@@ -623,6 +623,15 @@ func RunMigrations() error {
 				'Asia/Jakarta'
 			))::date;
 		$$ LANGUAGE sql STABLE`,
+		// SQL function: jam lokal (0-23) dari timestamp UTC, mengikuti timezone
+		// aplikasi — untuk pola penjualan per jam (session DB berjalan di UTC,
+		// jadi EXTRACT(HOUR ...) polos akan geser -7 jam dari WIB).
+		`CREATE OR REPLACE FUNCTION tz_hour(ts TIMESTAMP) RETURNS INT AS $$
+			SELECT EXTRACT(HOUR FROM (ts AT TIME ZONE 'UTC') AT TIME ZONE COALESCE(
+				(SELECT value FROM app_settings WHERE key = 'timezone'),
+				'Asia/Jakarta'
+			))::int;
+		$$ LANGUAGE sql STABLE`,
 		// SQL function: awal hari lokal d sebagai wall-clock UTC (tipe kolom kita).
 		// Dipakai di WHERE sebagai konstanta: "created_at >= tz_day_start($1)" bisa
 		// pakai index, berbeda dengan "tz_date(created_at) >= $1" yang membungkus

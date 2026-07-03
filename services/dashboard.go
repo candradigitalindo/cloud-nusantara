@@ -408,7 +408,7 @@ func GetManagerDashboard(scopeIDs []string, dateFrom, dateTo string) (*models.Ma
 	hourlyQuery := fmt.Sprintf(`
 		SELECT h.hour, COALESCE(SUM(t.total_amount), 0), COALESCE(COUNT(t.id), 0)
 		FROM generate_series(0, 23) h(hour)
-		LEFT JOIN cloud_transactions t ON EXTRACT(HOUR FROM t.created_at AT TIME ZONE COALESCE(current_setting('timezone', true), 'Asia/Jakarta')) = h.hour
+		LEFT JOIN cloud_transactions t ON tz_hour(t.created_at) = h.hour
 		  AND `+inRange+`%s
 		GROUP BY h.hour ORDER BY h.hour
 	`, outletFilter)
