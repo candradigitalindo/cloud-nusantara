@@ -21,7 +21,7 @@ var (
 	appFileNameRe   = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
 	appAllowedExt   = map[string]bool{".apk": true, ".aab": true, ".ipa": true, ".zip": true, ".exe": true, ".dmg": true}
 	maxAppFileBytes = int64(200 * 1024 * 1024) // 200MB
-	versionSuffixRe = regexp.MustCompile(`-v\d+$`) // suffix versi yang sudah ada di nama dasar
+	versionSuffixRe = regexp.MustCompile(`-v(\d+)(?:\.(\d+))?$`) // suffix versi di nama dasar: -v10 / -v10.2
 )
 
 func sanitizeAppFileName(name string) string {
@@ -35,30 +35,62 @@ func sanitizeAppFileName(name string) string {
 	return name
 }
 
-// versionedAppFileName menamai file upload dengan suffix versi increment
-// (`<nama>-v1.apk`, `-v2.apk`, …) sehingga tiap build dapat versi sendiri,
-// tidak menimpa build sebelumnya, dan versinya tampak dari nama file/URL.
-// Versi berikutnya = (versi tertinggi yang sudah ada untuk nama dasar itu) + 1.
+// versionedAppFileName menamai file upload dengan versi berurutan major.minor:
+// setelah `-v10` upload berikutnya menjadi `-v10.1`, lalu `-v10.2`, dst — build
+// baru tidak menimpa yang lama dan versinya tampak dari nama file/URL.
+// Naik MAJOR dilakukan eksplisit: beri nama file upload dengan versi yang lebih
+// tinggi (mis. `app-v11.apk`) dan versi itu dipakai apa adanya; minor berikutnya
+// melanjutkan dari sana (v11.1, v11.2, …).
 func versionedAppFileName(dir, name string) string {
 	ext := filepath.Ext(name)
 	base := strings.TrimSuffix(name, ext)
-	base = versionSuffixRe.ReplaceAllString(base, "") // buang -vN bila nama upload sudah berversi
+
+	// Versi eksplisit di nama upload (bila ada), lalu buang dari base.
+	expMaj, expMin, hasExplicit := 0, 0, false
+	if m := versionSuffixRe.FindStringSubmatch(base); m != nil {
+		expMaj, _ = strconv.Atoi(m[1])
+		if m[2] != "" {
+			expMin, _ = strconv.Atoi(m[2])
+		}
+		hasExplicit = true
+		base = versionSuffixRe.ReplaceAllString(base, "")
+	}
 	if base == "" {
 		base = "file"
 	}
 
-	maxV := 0
-	re := regexp.MustCompile(`^` + regexp.QuoteMeta(base) + `-v(\d+)` + regexp.QuoteMeta(ext) + `$`)
+	// Versi tertinggi yang sudah ada untuk nama dasar ini (dukung -vN dan -vN.M).
+	maxMaj, maxMin, found := 0, 0, false
+	re := regexp.MustCompile(`^` + regexp.QuoteMeta(base) + `-v(\d+)(?:\.(\d+))?` + regexp.QuoteMeta(ext) + `$`)
 	if entries, err := os.ReadDir(dir); err == nil {
 		for _, e := range entries {
-			if m := re.FindStringSubmatch(e.Name()); m != nil {
-				if n, err := strconv.Atoi(m[1]); err == nil && n > maxV {
-					maxV = n
-				}
+			m := re.FindStringSubmatch(e.Name())
+			if m == nil {
+				continue
+			}
+			maj, _ := strconv.Atoi(m[1])
+			min := 0
+			if m[2] != "" {
+				min, _ = strconv.Atoi(m[2])
+			}
+			if !found || maj > maxMaj || (maj == maxMaj && min > maxMin) {
+				maxMaj, maxMin, found = maj, min, true
 			}
 		}
 	}
-	return fmt.Sprintf("%s-v%d%s", base, maxV+1, ext)
+
+	// Versi eksplisit yang lebih tinggi dari semua yang ada → rilis baru, pakai apa adanya.
+	if hasExplicit && (!found || expMaj > maxMaj || (expMaj == maxMaj && expMin > maxMin)) {
+		if expMin > 0 {
+			return fmt.Sprintf("%s-v%d.%d%s", base, expMaj, expMin, ext)
+		}
+		return fmt.Sprintf("%s-v%d%s", base, expMaj, ext)
+	}
+	if !found {
+		return fmt.Sprintf("%s-v1%s", base, ext)
+	}
+	// Lanjutan berurutan: v10 → v10.1 → v10.2 …
+	return fmt.Sprintf("%s-v%d.%d%s", base, maxMaj, maxMin+1, ext)
 }
 
 type appFileInfo struct {
