@@ -107,8 +107,8 @@ func Setup(app *fiber.App, cfg *config.Config) {
 	admin.Delete("/work-units/:id", middleware.RequirePermission("workunits.delete"), handlers.DeleteWorkUnit)
 
 	// Dashboard
-	admin.Get("/dashboard", handlers.GetDashboard)
-	admin.Get("/manager-dashboard", handlers.GetManagerDashboard)
+	admin.Get("/dashboard", middleware.RequireAnyPermission("dashboard", "dashboard.manager"), handlers.GetDashboard)
+	admin.Get("/manager-dashboard", middleware.RequireAnyPermission("dashboard", "dashboard.manager"), handlers.GetManagerDashboard)
 
 	// Me / permissions (all roles)
 	admin.Get("/me/permissions", handlers.GetMyPermissions)

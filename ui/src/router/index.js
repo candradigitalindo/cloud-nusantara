@@ -121,7 +121,7 @@ const routes = [
         path: '',
         name: 'Dashboard',
         component: ManagerDashboard,
-        meta: { title: 'Dashboard — Cloud POS', requiresAuth: true },
+        meta: { title: 'Dashboard — Cloud POS', requiresAuth: true, permission: 'dashboard' },
       },
       // Alias lama → arahkan ke dashboard utama
       { path: 'manager-dashboard', redirect: '/' },
@@ -468,6 +468,11 @@ router.beforeEach(async (to) => {
 
   // Check permission-based access
   if (to.meta.permission && auth.isAuthenticated && !auth.hasPermission(to.meta.permission)) {
+    // Halaman utama '/': jangan tampilkan Forbidden — arahkan ke halaman default
+    // role tsb (mis. teknisi → /outlets). Terjadi saat klik logo / buka URL root.
+    if (to.path === '/' && auth.redirectTo && auth.redirectTo !== '/') {
+      return { path: auth.redirectTo }
+    }
     return { name: 'Forbidden' }
   }
 })
