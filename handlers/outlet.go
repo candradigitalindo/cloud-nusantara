@@ -154,20 +154,30 @@ func GetOutletInfo(c *fiber.Ctx) error {
 	}
 
 	taxSettings, _ := services.GetOutletTaxSettings(outletID)
+	company, _ := services.GetCompanyIdentity()
+	timezone, _ := services.GetTimezone()
 
 	return c.JSON(models.APIResponse{
 		Success: true,
 		Data: fiber.Map{
+			// Data outlet lengkap
 			"id":          outlet.ID,
 			"code":        outlet.Code,
+			"slug":        outlet.Slug,
 			"name":        outlet.Name,
 			"address":     outlet.Address,
+			"phone":       outlet.Phone,
+			"webhook_url": outlet.WebhookURL,
 			"is_active":   outlet.IsActive,
 			"created_at":  outlet.CreatedAt,
 			"updated_at":  outlet.UpdatedAt,
+			// Pengaturan pajak per-outlet
 			"tax_enabled": taxSettings.TaxEnabled,
 			"tax_rate":    taxSettings.TaxRate,
 			"tax_name":    taxSettings.TaxName,
+			// Identitas perusahaan (untuk header struk) + zona waktu
+			"company":  company,
+			"timezone": timezone,
 		},
 	})
 }
