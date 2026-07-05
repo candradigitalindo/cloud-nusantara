@@ -1313,6 +1313,18 @@ func RunMigrations() error {
 			received_at     TIMESTAMP NOT NULL DEFAULT (now() AT TIME ZONE 'UTC')
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_device_hb_logs_outlet ON device_heartbeat_logs(outlet_id, received_at DESC)`,
+		// Telemetri RAM & CPU perangkat (App POS Android). Semua nullable —
+		// hanya terkirim di Android, dan field CPU bersifat best-effort (bisa
+		// tidak ada saat heartbeat pertama / diblok SELinux).
+		`ALTER TABLE device_heartbeats ADD COLUMN IF NOT EXISTS ram_total_mb     INTEGER`,
+		`ALTER TABLE device_heartbeats ADD COLUMN IF NOT EXISTS ram_free_mb      INTEGER`,
+		`ALTER TABLE device_heartbeats ADD COLUMN IF NOT EXISTS ram_used_percent INTEGER`,
+		`ALTER TABLE device_heartbeats ADD COLUMN IF NOT EXISTS ram_low          BOOLEAN`,
+		`ALTER TABLE device_heartbeats ADD COLUMN IF NOT EXISTS cpu_cores        INTEGER`,
+		`ALTER TABLE device_heartbeats ADD COLUMN IF NOT EXISTS cpu_used_percent REAL`,
+		`ALTER TABLE device_heartbeats ADD COLUMN IF NOT EXISTS cpu_load_1m      REAL`,
+		`ALTER TABLE device_heartbeats ADD COLUMN IF NOT EXISTS cpu_load_5m      REAL`,
+		`ALTER TABLE device_heartbeats ADD COLUMN IF NOT EXISTS cpu_load_15m     REAL`,
 	}
 	for _, m := range deviceMigrations {
 		if _, err := DB.Exec(m); err != nil {

@@ -1,6 +1,7 @@
 package services
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -47,19 +48,29 @@ func SaveDeviceHeartbeat(outletID string, req models.DeviceHeartbeatRequest) err
 	reportedAt := parseTime(req.ReportedAt)
 	lastSyncAt := parseTime(req.Network.LastSyncAt)
 
+	d := req.Device
 	_, err = database.DB.Exec(`
 		INSERT INTO device_heartbeats
 			(outlet_id, app_version, battery, battery_state, model, os,
 			 storage_total_mb, storage_free_mb, network_online, pending_sync,
-			 last_sync_at, printers, reported_at, received_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13, now() AT TIME ZONE 'UTC')
+			 last_sync_at, printers, reported_at,
+			 ram_total_mb, ram_free_mb, ram_used_percent, ram_low,
+			 cpu_cores, cpu_used_percent, cpu_load_1m, cpu_load_5m, cpu_load_15m,
+			 received_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,
+			$14,$15,$16,$17,$18,$19,$20,$21,$22, now() AT TIME ZONE 'UTC')
 		ON CONFLICT (outlet_id) DO UPDATE SET
 			app_version=$2, battery=$3, battery_state=$4, model=$5, os=$6,
 			storage_total_mb=$7, storage_free_mb=$8, network_online=$9, pending_sync=$10,
-			last_sync_at=$11, printers=$12, reported_at=$13, received_at=now() AT TIME ZONE 'UTC'`,
-		outletID, req.Device.AppVersion, req.Device.Battery, req.Device.BatteryState,
-		req.Device.Model, req.Device.OS, req.Device.StorageTotalMB, req.Device.StorageFreeMB,
+			last_sync_at=$11, printers=$12, reported_at=$13,
+			ram_total_mb=$14, ram_free_mb=$15, ram_used_percent=$16, ram_low=$17,
+			cpu_cores=$18, cpu_used_percent=$19, cpu_load_1m=$20, cpu_load_5m=$21, cpu_load_15m=$22,
+			received_at=now() AT TIME ZONE 'UTC'`,
+		outletID, d.AppVersion, d.Battery, d.BatteryState,
+		d.Model, d.OS, d.StorageTotalMB, d.StorageFreeMB,
 		req.Network.Online, req.Network.PendingSync, lastSyncAt, string(printersJSON), reportedAt,
+		d.RamTotalMB, d.RamFreeMB, d.RamUsedPercent, d.RamLow,
+		d.CPUCores, d.CPUUsedPercent, d.CPULoad1m, d.CPULoad5m, d.CPULoad15m,
 	)
 	if err != nil {
 		return err
@@ -109,7 +120,9 @@ func GetDeviceMonitor(outletID string, outletScope []string) (*models.DeviceMoni
 			COALESCE(to_char((h.reported_at  AT TIME ZONE 'UTC') AT TIME ZONE %[1]s, 'YYYY-MM-DD HH24:MI'),''),
 			COALESCE(to_char((h.received_at  AT TIME ZONE 'UTC') AT TIME ZONE %[1]s, 'YYYY-MM-DD HH24:MI'),''),
 			COALESCE(EXTRACT(EPOCH FROM ((now() AT TIME ZONE 'UTC') - h.received_at))/60, -1)::int,
-			COALESCE(h.printers::text, '[]')
+			COALESCE(h.printers::text, '[]'),
+			h.ram_total_mb, h.ram_free_mb, h.ram_used_percent, h.ram_low,
+			h.cpu_cores, h.cpu_used_percent, h.cpu_load_1m, h.cpu_load_5m, h.cpu_load_15m
 		FROM outlets o
 		LEFT JOIN device_heartbeats h ON h.outlet_id = o.id
 		WHERE %[2]s
@@ -125,13 +138,50 @@ func GetDeviceMonitor(outletID string, outletScope []string) (*models.DeviceMoni
 	for rows.Next() {
 		var d models.DeviceStatus
 		var printersJSON string
+		var ramTotal, ramFree, ramUsed, cpuCores sql.NullInt64
+		var ramLow sql.NullBool
+		var cpuUsed, cpuL1, cpuL5, cpuL15 sql.NullFloat64
 		if err := rows.Scan(&d.OutletID, &d.OutletName, &d.OutletCode,
 			&d.HasData, &d.AppVersion, &d.Battery, &d.BatteryState, &d.Model, &d.OS,
 			&d.StorageTotalMB, &d.StorageFreeMB, &d.NetworkOnline, &d.PendingSync,
-			&d.LastSyncAt, &d.ReportedAt, &d.ReceivedAt, &d.StaleMinutes, &printersJSON); err != nil {
+			&d.LastSyncAt, &d.ReportedAt, &d.ReceivedAt, &d.StaleMinutes, &printersJSON,
+			&ramTotal, &ramFree, &ramUsed, &ramLow,
+			&cpuCores, &cpuUsed, &cpuL1, &cpuL5, &cpuL15); err != nil {
 			return nil, err
 		}
 		d.OutletID = strings.TrimSpace(d.OutletID)
+		// Kolom nullable → pointer (null bila perangkat tidak melaporkannya).
+		if ramTotal.Valid {
+			v := int(ramTotal.Int64)
+			d.RamTotalMB = &v
+		}
+		if ramFree.Valid {
+			v := int(ramFree.Int64)
+			d.RamFreeMB = &v
+		}
+		if ramUsed.Valid {
+			v := int(ramUsed.Int64)
+			d.RamUsedPercent = &v
+		}
+		if ramLow.Valid {
+			d.RamLow = &ramLow.Bool
+		}
+		if cpuCores.Valid {
+			v := int(cpuCores.Int64)
+			d.CPUCores = &v
+		}
+		if cpuUsed.Valid {
+			d.CPUUsedPercent = &cpuUsed.Float64
+		}
+		if cpuL1.Valid {
+			d.CPULoad1m = &cpuL1.Float64
+		}
+		if cpuL5.Valid {
+			d.CPULoad5m = &cpuL5.Float64
+		}
+		if cpuL15.Valid {
+			d.CPULoad15m = &cpuL15.Float64
+		}
 
 		var printers []models.DevicePrinter
 		json.Unmarshal([]byte(printersJSON), &printers)
@@ -181,6 +231,14 @@ func GetDeviceMonitor(outletID string, outletScope []string) (*models.DeviceMoni
 		}
 		if d.HasData && d.PrintersOnline < d.PrintersTotal {
 			report.Summary.PrinterIssues++
+		}
+		// Perangkat dengan sumber daya kritis: RAM ≥90% / lowMemory, atau CPU ≥90%.
+		if d.HasData {
+			ramCrit := (d.RamUsedPercent != nil && *d.RamUsedPercent >= 90) || (d.RamLow != nil && *d.RamLow)
+			cpuCrit := d.CPUUsedPercent != nil && *d.CPUUsedPercent >= 90
+			if ramCrit || cpuCrit {
+				report.Summary.ResourceIssues++
+			}
 		}
 
 		report.Devices = append(report.Devices, d)

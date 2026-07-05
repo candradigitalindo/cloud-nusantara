@@ -31,7 +31,7 @@
         <p class="font-bold">{{ problemCount }} perangkat perlu perhatian</p>
         <p class="text-sm opacity-90">
           {{ report.summary.offline_count }} offline · {{ report.summary.no_data_count }} tanpa data ·
-          {{ report.summary.low_battery }} baterai lemah · {{ report.summary.printer_issues }} printer bermasalah.
+          {{ report.summary.low_battery }} baterai lemah · {{ report.summary.printer_issues }} printer bermasalah<span v-if="report.summary.resource_issues"> · {{ report.summary.resource_issues }} RAM/CPU kritis</span>.
         </p>
       </div>
     </div>
@@ -106,6 +106,26 @@
             </div>
           </div>
 
+          <!-- RAM + CPU (Android; nullable) -->
+          <div v-if="d.ram_used_percent != null || d.cpu_cores != null" class="grid grid-cols-2 gap-3 mt-3">
+            <div v-if="d.ram_used_percent != null">
+              <div class="metric-top">
+                <span class="metric-lbl">RAM</span>
+                <span class="metric-val" :class="ramTextCls(d)">{{ d.ram_used_percent }}%<span v-if="d.ram_low" class="metric-flag">kritis</span></span>
+              </div>
+              <div class="bar"><div class="bar-fill" :class="ramBarCls(d)" :style="{ width: d.ram_used_percent + '%' }" /></div>
+              <p class="metric-sub">{{ fmtGB(d.ram_free_mb) }} bebas dari {{ fmtGB(d.ram_total_mb) }}</p>
+            </div>
+            <div v-if="d.cpu_cores != null">
+              <div class="metric-top">
+                <span class="metric-lbl">CPU<span class="metric-cores">{{ d.cpu_cores }} core</span></span>
+                <span class="metric-val" :class="d.cpu_used_percent != null ? cpuTextCls(d) : ''">{{ d.cpu_used_percent != null ? Math.round(d.cpu_used_percent) + '%' : '—' }}</span>
+              </div>
+              <div class="bar"><div class="bar-fill" :class="cpuBarCls(d)" :style="{ width: (d.cpu_used_percent || 0) + '%' }" /></div>
+              <p class="metric-sub">{{ d.cpu_load_1m != null ? `load ${d.cpu_load_1m.toFixed(2)} / ${(d.cpu_load_5m ?? 0).toFixed(2)} / ${(d.cpu_load_15m ?? 0).toFixed(2)}` : 'load tak tersedia' }}</p>
+            </div>
+          </div>
+
           <!-- Jaringan + Printer -->
           <div class="flex items-center gap-2 mt-3 flex-wrap">
             <span class="chip" :class="d.network_online ? 'chip-ok' : 'chip-bad'">
@@ -152,6 +172,8 @@
             <div class="kv"><span>Versi App</span><b>{{ active.app_version || '—' }}</b></div>
             <div class="kv"><span>Baterai</span><b :class="batteryTextCls(active)">{{ active.battery >= 0 ? active.battery + '%' : '—' }} · {{ batteryStateLabel(active.battery_state) }}</b></div>
             <div class="kv"><span>Penyimpanan</span><b>{{ fmtGB(active.storage_free_mb) }} / {{ fmtGB(active.storage_total_mb) }} bebas</b></div>
+            <div v-if="active.ram_used_percent != null" class="kv"><span>RAM</span><b :class="ramTextCls(active)">{{ active.ram_used_percent }}% terpakai{{ active.ram_low ? ' · kritis' : '' }}<br><span class="text-xs font-normal text-gray-400">{{ fmtGB(active.ram_free_mb) }} / {{ fmtGB(active.ram_total_mb) }} bebas</span></b></div>
+            <div v-if="active.cpu_cores != null" class="kv"><span>CPU ({{ active.cpu_cores }} core)</span><b :class="active.cpu_used_percent != null ? cpuTextCls(active) : ''">{{ active.cpu_used_percent != null ? Math.round(active.cpu_used_percent) + '% terpakai' : '—' }}<br><span class="text-xs font-normal text-gray-400">{{ active.cpu_load_1m != null ? `load ${active.cpu_load_1m.toFixed(2)} / ${(active.cpu_load_5m ?? 0).toFixed(2)} / ${(active.cpu_load_15m ?? 0).toFixed(2)}` : 'load tak tersedia' }}</span></b></div>
             <div class="kv"><span>Antrian Sync</span><b :class="active.pending_sync ? 'tx-warn' : ''">{{ active.pending_sync }} item</b></div>
             <div class="kv"><span>Sync terakhir</span><b>{{ active.last_sync_at || '—' }}</b></div>
             <div class="kv"><span>Heartbeat</span><b>{{ active.reported_at || '—' }}</b></div>
@@ -247,7 +269,7 @@ const filteredDevices = computed(() => {
 const problemCount = computed(() => {
   const s = report.value?.summary
   if (!s) return 0
-  return s.offline_count + s.no_data_count + s.low_battery + s.printer_issues
+  return s.offline_count + s.no_data_count + s.low_battery + s.printer_issues + (s.resource_issues || 0)
 })
 
 function statusLabel(s) {
@@ -272,6 +294,28 @@ function batteryBarCls(d) {
 function printerChipCls(d) {
   if (d.printers_total === 0) return 'chip-muted'
   return d.printers_online >= d.printers_total ? 'chip-ok' : 'chip-bad'
+}
+// Ambang RAM: ≥90% atau lowMemory = merah, ≥80% = kuning.
+function ramTextCls(d) {
+  if ((d.ram_used_percent ?? 0) >= 90 || d.ram_low) return 'tx-bad'
+  if ((d.ram_used_percent ?? 0) >= 80) return 'tx-warn'
+  return ''
+}
+function ramBarCls(d) {
+  if ((d.ram_used_percent ?? 0) >= 90 || d.ram_low) return 'bf-bad'
+  if ((d.ram_used_percent ?? 0) >= 80) return 'bf-warn'
+  return 'bf-ok'
+}
+// Ambang CPU: ≥90% = merah, ≥75% = kuning.
+function cpuTextCls(d) {
+  if ((d.cpu_used_percent ?? 0) >= 90) return 'tx-bad'
+  if ((d.cpu_used_percent ?? 0) >= 75) return 'tx-warn'
+  return ''
+}
+function cpuBarCls(d) {
+  if ((d.cpu_used_percent ?? 0) >= 90) return 'bf-bad'
+  if ((d.cpu_used_percent ?? 0) >= 75) return 'bf-warn'
+  return 'bf-ok'
 }
 function fmtGB(mb) {
   if (!mb || mb <= 0) return '0 GB'
@@ -385,6 +429,8 @@ useRealtime(['device'], () => load(true))
 .metric-lbl { font-size: .66rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: #94a3b8; }
 .metric-val { font-size: .95rem; font-weight: 800; color: #111827; }
 .metric-sub { font-size: .68rem; color: #9ca3af; margin-top: .25rem; }
+.metric-cores { font-size: .6rem; font-weight: 600; color: #cbd5e1; margin-left: .35rem; text-transform: none; letter-spacing: 0; }
+.metric-flag { font-size: .58rem; font-weight: 800; color: #b91c1c; background: rgba(239,68,68,.12); border-radius: .35rem; padding: .05rem .3rem; margin-left: .35rem; vertical-align: middle; }
 .bar { height: 7px; border-radius: 999px; background: #eef2f5; overflow: hidden; margin-top: .3rem; }
 .bar-fill { height: 100%; border-radius: 999px; transition: width .3s; }
 .bf-ok { background: linear-gradient(90deg, #34d399, #10b981); }

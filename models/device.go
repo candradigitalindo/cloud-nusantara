@@ -26,6 +26,19 @@ type DeviceHeartbeatRequest struct {
 		OS             string `json:"os"`
 		StorageTotalMB int64  `json:"storage_total_mb"`
 		StorageFreeMB  int64  `json:"storage_free_mb"`
+
+		// RAM (Android; nullable karena tidak dikirim di iOS/desktop)
+		RamTotalMB     *int  `json:"ram_total_mb"`
+		RamFreeMB      *int  `json:"ram_free_mb"`
+		RamUsedPercent *int  `json:"ram_used_percent"`
+		RamLow         *bool `json:"ram_low"`
+
+		// CPU (Android; cpu_cores selalu ada di Android, sisanya best-effort)
+		CPUCores       *int     `json:"cpu_cores"`
+		CPUUsedPercent *float64 `json:"cpu_used_percent"`
+		CPULoad1m      *float64 `json:"cpu_load_1m"`
+		CPULoad5m      *float64 `json:"cpu_load_5m"`
+		CPULoad15m     *float64 `json:"cpu_load_15m"`
 	} `json:"device"`
 	Printers []DevicePrinter `json:"printers"`
 	Network  struct {
@@ -55,6 +68,17 @@ type DeviceStatus struct {
 	StorageFreeMB  int64   `json:"storage_free_mb"`
 	StorageUsedPct float64 `json:"storage_used_pct"`
 
+	// RAM & CPU — nullable (null = perangkat tidak melaporkan; mis. iOS atau CPU diblok)
+	RamTotalMB     *int     `json:"ram_total_mb"`
+	RamFreeMB      *int     `json:"ram_free_mb"`
+	RamUsedPercent *int     `json:"ram_used_percent"`
+	RamLow         *bool    `json:"ram_low"`
+	CPUCores       *int     `json:"cpu_cores"`
+	CPUUsedPercent *float64 `json:"cpu_used_percent"`
+	CPULoad1m      *float64 `json:"cpu_load_1m"`
+	CPULoad5m      *float64 `json:"cpu_load_5m"`
+	CPULoad15m     *float64 `json:"cpu_load_15m"`
+
 	NetworkOnline bool   `json:"network_online"`
 	PendingSync   int    `json:"pending_sync"`
 	LastSyncAt    string `json:"last_sync_at"` // lokal "YYYY-MM-DD HH:MM"
@@ -75,6 +99,7 @@ type DeviceMonitorSummary struct {
 	NoDataCount     int `json:"no_data_count"`
 	LowBattery      int `json:"low_battery"`        // baterai < 20% & tidak charging
 	PrinterIssues   int `json:"printer_issues"`     // ada printer terputus
+	ResourceIssues  int `json:"resource_issues"`    // RAM/CPU perangkat kritis
 	PendingSyncTotal int `json:"pending_sync_total"` // total antrian sync semua outlet
 }
 
