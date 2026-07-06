@@ -1417,6 +1417,9 @@ func RunMigrations() error {
 		// Nomor pengajuan pengadaan harus unik (generator MAX()+1 bisa balapan;
 		// call site melakukan retry saat index ini menolak duplikat).
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_purchase_requests_number ON purchase_requests(request_number)`,
+		// order_id dijoin dari cloud_transactions ke cloud_orders (pax dashboard,
+		// cashier lookup laporan) — sebelumnya tanpa index → seq scan.
+		`CREATE INDEX IF NOT EXISTS idx_cloud_transactions_order ON cloud_transactions(order_id)`,
 	}
 	for _, m := range perfIndexes {
 		if _, err := DB.Exec(m); err != nil {
