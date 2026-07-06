@@ -68,7 +68,7 @@
             </div>
             <div>
               <h3 class="panel-title">Performa Outlet</h3>
-              <p class="panel-sub">Ranking berdasarkan pendapatan bulan ini</p>
+              <p class="panel-sub">Ranking berdasarkan pendapatan · {{ periodLabel }}</p>
             </div>
           </div>
         </div>
@@ -133,7 +133,7 @@
               </div>
               <div>
                 <h3 class="panel-title">Tren Pendapatan</h3>
-                <p class="panel-sub">30 hari terakhir</p>
+                <p class="panel-sub">{{ periodLabel }}</p>
               </div>
             </div>
             <div class="flex flex-wrap items-center justify-end gap-x-4 gap-y-1 text-xs">
@@ -144,7 +144,7 @@
           <!-- mini summary strip -->
           <div class="trend-stats">
             <div class="ts-item">
-              <span class="ts-label">Total 30 hari</span>
+              <span class="ts-label">Total periode</span>
               <span class="ts-value">{{ formatRupiah(trendTotals.revenue) }}</span>
             </div>
             <div class="ts-divider" />
@@ -173,13 +173,13 @@
               </div>
               <div>
                 <h3 class="panel-title">Metode Pembayaran</h3>
-                <p class="panel-sub">Bulan ini</p>
+                <p class="panel-sub">{{ periodLabel }}</p>
               </div>
             </div>
           </div>
           <div class="chart-body-radial">
             <VueApexCharts v-if="paymentSeries.length" type="radialBar" height="240" :options="paymentOpts" :series="paymentSeries" />
-            <div v-else class="text-center text-gray-400 text-sm py-10">Belum ada transaksi bulan ini.</div>
+            <div v-else class="text-center text-gray-400 text-sm py-10">Belum ada transaksi pada periode ini.</div>
           </div>
           <div class="px-5 pb-4 space-y-2.5">
             <div v-for="pm in data.payment_methods" :key="pm.method" class="pm-row">
@@ -205,7 +205,7 @@
               </div>
               <div>
                 <h3 class="panel-title">Pola Penjualan Per Jam</h3>
-                <p class="panel-sub">Hari ini — identifikasi jam sibuk</p>
+                <p class="panel-sub">{{ periodLabel }} — identifikasi jam sibuk</p>
               </div>
             </div>
             <span v-if="peakHour" class="peak-chip">
@@ -227,7 +227,7 @@
               </div>
               <div>
                 <h3 class="panel-title">Produk Terlaris</h3>
-                <p class="panel-sub">10 teratas bulan ini</p>
+                <p class="panel-sub">10 teratas · {{ periodLabel }}</p>
               </div>
             </div>
           </div>
@@ -254,7 +254,7 @@
                   <td class="py-2.5 px-4 text-right tabular-nums font-semibold text-gray-800">{{ formatRupiah(p.revenue) }}</td>
                 </tr>
                 <tr v-if="!data.top_products?.length">
-                  <td colspan="4" class="py-8 text-center text-gray-400 text-sm">Belum ada data produk bulan ini.</td>
+                  <td colspan="4" class="py-8 text-center text-gray-400 text-sm">Belum ada data produk pada periode ini.</td>
                 </tr>
               </tbody>
             </table>
@@ -346,6 +346,10 @@ function ymd(d) { return d.toLocaleDateString('en-CA', { timeZone: APP_TZ }) }
 const _today = ymd(new Date())
 const range = ref({ from: _today, to: _today, label: 'Hari Ini' })
 watch(range, fetchData)
+
+// Label periode terpilih untuk subtitle panel (semua panel selain kartu bulanan
+// mengikuti rentang tanggal, jadi teksnya harus dinamis, bukan "bulan ini").
+const periodLabel = computed(() => range.value?.label || 'periode terpilih')
 // Auto-update saat transaksi/order baru tersinkron dari outlet (SSE) —
 // silent: angka berubah di tempat, tanpa spinner/kedip.
 useRealtime(['transaction', 'order'], () => fetchData(true))
