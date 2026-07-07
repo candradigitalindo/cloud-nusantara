@@ -36,6 +36,7 @@ type DeviceHeartbeatRequest struct {
 		// CPU (Android; cpu_cores selalu ada di Android, sisanya best-effort)
 		CPUCores       *int     `json:"cpu_cores"`
 		CPUUsedPercent *float64 `json:"cpu_used_percent"`
+		CPUSource      *string  `json:"cpu_source"` // system (seluruh perangkat) | app (proses POS saja)
 		CPULoad1m      *float64 `json:"cpu_load_1m"`
 		CPULoad5m      *float64 `json:"cpu_load_5m"`
 		CPULoad15m     *float64 `json:"cpu_load_15m"`
@@ -75,6 +76,7 @@ type DeviceStatus struct {
 	RamLow         *bool    `json:"ram_low"`
 	CPUCores       *int     `json:"cpu_cores"`
 	CPUUsedPercent *float64 `json:"cpu_used_percent"`
+	CPUSource      *string  `json:"cpu_source"` // system | app
 	CPULoad1m      *float64 `json:"cpu_load_1m"`
 	CPULoad5m      *float64 `json:"cpu_load_5m"`
 	CPULoad15m     *float64 `json:"cpu_load_15m"`

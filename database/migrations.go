@@ -1325,6 +1325,9 @@ func RunMigrations() error {
 		`ALTER TABLE device_heartbeats ADD COLUMN IF NOT EXISTS cpu_load_1m      REAL`,
 		`ALTER TABLE device_heartbeats ADD COLUMN IF NOT EXISTS cpu_load_5m      REAL`,
 		`ALTER TABLE device_heartbeats ADD COLUMN IF NOT EXISTS cpu_load_15m     REAL`,
+		// Sumber angka CPU: 'system' (seluruh perangkat via /proc/stat) atau 'app'
+		// (proses POS saja, fallback saat /proc/stat diblok SELinux).
+		`ALTER TABLE device_heartbeats ADD COLUMN IF NOT EXISTS cpu_source VARCHAR(10)`,
 	}
 	for _, m := range deviceMigrations {
 		if _, err := DB.Exec(m); err != nil {

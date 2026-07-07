@@ -55,22 +55,22 @@ func SaveDeviceHeartbeat(outletID string, req models.DeviceHeartbeatRequest) err
 			 storage_total_mb, storage_free_mb, network_online, pending_sync,
 			 last_sync_at, printers, reported_at,
 			 ram_total_mb, ram_free_mb, ram_used_percent, ram_low,
-			 cpu_cores, cpu_used_percent, cpu_load_1m, cpu_load_5m, cpu_load_15m,
+			 cpu_cores, cpu_used_percent, cpu_load_1m, cpu_load_5m, cpu_load_15m, cpu_source,
 			 received_at)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,
-			$14,$15,$16,$17,$18,$19,$20,$21,$22, now() AT TIME ZONE 'UTC')
+			$14,$15,$16,$17,$18,$19,$20,$21,$22,$23, now() AT TIME ZONE 'UTC')
 		ON CONFLICT (outlet_id) DO UPDATE SET
 			app_version=$2, battery=$3, battery_state=$4, model=$5, os=$6,
 			storage_total_mb=$7, storage_free_mb=$8, network_online=$9, pending_sync=$10,
 			last_sync_at=$11, printers=$12, reported_at=$13,
 			ram_total_mb=$14, ram_free_mb=$15, ram_used_percent=$16, ram_low=$17,
-			cpu_cores=$18, cpu_used_percent=$19, cpu_load_1m=$20, cpu_load_5m=$21, cpu_load_15m=$22,
+			cpu_cores=$18, cpu_used_percent=$19, cpu_load_1m=$20, cpu_load_5m=$21, cpu_load_15m=$22, cpu_source=$23,
 			received_at=now() AT TIME ZONE 'UTC'`,
 		outletID, d.AppVersion, d.Battery, d.BatteryState,
 		d.Model, d.OS, d.StorageTotalMB, d.StorageFreeMB,
 		req.Network.Online, req.Network.PendingSync, lastSyncAt, string(printersJSON), reportedAt,
 		d.RamTotalMB, d.RamFreeMB, d.RamUsedPercent, d.RamLow,
-		d.CPUCores, d.CPUUsedPercent, d.CPULoad1m, d.CPULoad5m, d.CPULoad15m,
+		d.CPUCores, d.CPUUsedPercent, d.CPULoad1m, d.CPULoad5m, d.CPULoad15m, d.CPUSource,
 	)
 	if err != nil {
 		return err
@@ -122,7 +122,7 @@ func GetDeviceMonitor(outletID string, outletScope []string) (*models.DeviceMoni
 			COALESCE(EXTRACT(EPOCH FROM ((now() AT TIME ZONE 'UTC') - h.received_at))/60, -1)::int,
 			COALESCE(h.printers::text, '[]'),
 			h.ram_total_mb, h.ram_free_mb, h.ram_used_percent, h.ram_low,
-			h.cpu_cores, h.cpu_used_percent, h.cpu_load_1m, h.cpu_load_5m, h.cpu_load_15m
+			h.cpu_cores, h.cpu_used_percent, h.cpu_load_1m, h.cpu_load_5m, h.cpu_load_15m, h.cpu_source
 		FROM outlets o
 		LEFT JOIN device_heartbeats h ON h.outlet_id = o.id
 		WHERE %[2]s
@@ -141,12 +141,13 @@ func GetDeviceMonitor(outletID string, outletScope []string) (*models.DeviceMoni
 		var ramTotal, ramFree, ramUsed, cpuCores sql.NullInt64
 		var ramLow sql.NullBool
 		var cpuUsed, cpuL1, cpuL5, cpuL15 sql.NullFloat64
+		var cpuSource sql.NullString
 		if err := rows.Scan(&d.OutletID, &d.OutletName, &d.OutletCode,
 			&d.HasData, &d.AppVersion, &d.Battery, &d.BatteryState, &d.Model, &d.OS,
 			&d.StorageTotalMB, &d.StorageFreeMB, &d.NetworkOnline, &d.PendingSync,
 			&d.LastSyncAt, &d.ReportedAt, &d.ReceivedAt, &d.StaleMinutes, &printersJSON,
 			&ramTotal, &ramFree, &ramUsed, &ramLow,
-			&cpuCores, &cpuUsed, &cpuL1, &cpuL5, &cpuL15); err != nil {
+			&cpuCores, &cpuUsed, &cpuL1, &cpuL5, &cpuL15, &cpuSource); err != nil {
 			return nil, err
 		}
 		d.OutletID = strings.TrimSpace(d.OutletID)
@@ -172,6 +173,9 @@ func GetDeviceMonitor(outletID string, outletScope []string) (*models.DeviceMoni
 		}
 		if cpuUsed.Valid {
 			d.CPUUsedPercent = &cpuUsed.Float64
+		}
+		if cpuSource.Valid && cpuSource.String != "" {
+			d.CPUSource = &cpuSource.String
 		}
 		if cpuL1.Valid {
 			d.CPULoad1m = &cpuL1.Float64
@@ -233,9 +237,12 @@ func GetDeviceMonitor(outletID string, outletScope []string) (*models.DeviceMoni
 			report.Summary.PrinterIssues++
 		}
 		// Perangkat dengan sumber daya kritis: RAM ≥90% / lowMemory, atau CPU ≥90%.
+		// CPU dihitung kritis HANYA bila sumbernya 'system' (seluruh perangkat);
+		// bila 'app' angka itu cuma beban aplikasi POS, bukan indikator perangkat.
 		if d.HasData {
 			ramCrit := (d.RamUsedPercent != nil && *d.RamUsedPercent >= 90) || (d.RamLow != nil && *d.RamLow)
-			cpuCrit := d.CPUUsedPercent != nil && *d.CPUUsedPercent >= 90
+			cpuIsSystem := d.CPUSource == nil || *d.CPUSource == "system"
+			cpuCrit := cpuIsSystem && d.CPUUsedPercent != nil && *d.CPUUsedPercent >= 90
 			if ramCrit || cpuCrit {
 				report.Summary.ResourceIssues++
 			}

@@ -118,11 +118,11 @@
             </div>
             <div v-if="d.cpu_cores != null">
               <div class="metric-top">
-                <span class="metric-lbl">CPU<span class="metric-cores">{{ d.cpu_cores }} core</span></span>
-                <span class="metric-val" :class="d.cpu_used_percent != null ? cpuTextCls(d) : ''">{{ d.cpu_used_percent != null ? Math.round(d.cpu_used_percent) + '%' : '—' }}</span>
+                <span class="metric-lbl">CPU<span class="metric-cores">{{ d.cpu_cores }} core</span><span v-if="d.cpu_source === 'app'" class="metric-flag" title="Angka CPU hanya beban aplikasi POS (bukan seluruh perangkat)">app</span></span>
+                <span class="metric-val" :class="d.cpu_used_percent != null && d.cpu_source !== 'app' ? cpuTextCls(d) : ''">{{ d.cpu_used_percent != null ? Math.round(d.cpu_used_percent) + '%' : '—' }}</span>
               </div>
-              <div class="bar"><div class="bar-fill" :class="cpuBarCls(d)" :style="{ width: (d.cpu_used_percent || 0) + '%' }" /></div>
-              <p class="metric-sub">{{ d.cpu_load_1m != null ? `load ${d.cpu_load_1m.toFixed(2)} / ${(d.cpu_load_5m ?? 0).toFixed(2)} / ${(d.cpu_load_15m ?? 0).toFixed(2)}` : 'load tak tersedia' }}</p>
+              <div class="bar"><div class="bar-fill" :class="d.cpu_source === 'app' ? 'bf-ok' : cpuBarCls(d)" :style="{ width: (d.cpu_used_percent || 0) + '%' }" /></div>
+              <p class="metric-sub">{{ d.cpu_load_1m != null ? `load ${d.cpu_load_1m.toFixed(2)} / ${(d.cpu_load_5m ?? 0).toFixed(2)} / ${(d.cpu_load_15m ?? 0).toFixed(2)}` : (d.cpu_source === 'app' ? 'beban aplikasi' : 'load tak tersedia') }}</p>
             </div>
           </div>
 
@@ -173,7 +173,7 @@
             <div class="kv"><span>Baterai</span><b :class="batteryTextCls(active)">{{ active.battery >= 0 ? active.battery + '%' : '—' }} · {{ batteryStateLabel(active.battery_state) }}</b></div>
             <div class="kv"><span>Penyimpanan</span><b>{{ fmtGB(active.storage_free_mb) }} / {{ fmtGB(active.storage_total_mb) }} bebas</b></div>
             <div v-if="active.ram_used_percent != null" class="kv"><span>RAM</span><b :class="ramTextCls(active)">{{ active.ram_used_percent }}% terpakai{{ active.ram_low ? ' · kritis' : '' }}<br><span class="text-xs font-normal text-gray-400">{{ fmtGB(active.ram_free_mb) }} / {{ fmtGB(active.ram_total_mb) }} bebas</span></b></div>
-            <div v-if="active.cpu_cores != null" class="kv"><span>CPU ({{ active.cpu_cores }} core)</span><b :class="active.cpu_used_percent != null ? cpuTextCls(active) : ''">{{ active.cpu_used_percent != null ? Math.round(active.cpu_used_percent) + '% terpakai' : '—' }}<br><span class="text-xs font-normal text-gray-400">{{ active.cpu_load_1m != null ? `load ${active.cpu_load_1m.toFixed(2)} / ${(active.cpu_load_5m ?? 0).toFixed(2)} / ${(active.cpu_load_15m ?? 0).toFixed(2)}` : 'load tak tersedia' }}</span></b></div>
+            <div v-if="active.cpu_cores != null" class="kv"><span>CPU ({{ active.cpu_cores }} core)<template v-if="active.cpu_source === 'app'"> · app</template></span><b :class="active.cpu_used_percent != null && active.cpu_source !== 'app' ? cpuTextCls(active) : ''">{{ active.cpu_used_percent != null ? Math.round(active.cpu_used_percent) + (active.cpu_source === 'app' ? '% (beban app)' : '% terpakai') : '—' }}<br><span class="text-xs font-normal text-gray-400">{{ active.cpu_load_1m != null ? `load ${active.cpu_load_1m.toFixed(2)} / ${(active.cpu_load_5m ?? 0).toFixed(2)} / ${(active.cpu_load_15m ?? 0).toFixed(2)}` : 'load tak tersedia' }}</span></b></div>
             <div class="kv"><span>Antrian Sync</span><b :class="active.pending_sync ? 'tx-warn' : ''">{{ active.pending_sync }} item</b></div>
             <div class="kv"><span>Sync terakhir</span><b>{{ active.last_sync_at || '—' }}</b></div>
             <div class="kv"><span>Heartbeat</span><b>{{ active.reported_at || '—' }}</b></div>
