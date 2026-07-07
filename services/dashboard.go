@@ -432,8 +432,41 @@ func GetManagerDashboard(scopeIDs []string, dateFrom, dateTo string) (*models.Ma
 		GROUP BY d.dt ORDER BY d.dt
 	`, b.fromDate, b.toDate, tzLit(b.tz), tzLit(b.tz), outletFilter)
 
+	// Pax per hari (jumlah tamu, per hari lokal berdasarkan waktu bayar terakhir
+	// order) — untuk menghitung basket size (pendapatan/pax) di grafik tren.
+	paxTrendQuery := fmt.Sprintf(`
+		WITH pay AS (SELECT order_id AS oid, MAX(created_at) AS last_paid FROM cloud_transactions GROUP BY order_id)
+		SELECT TO_CHAR(((pay.last_paid AT TIME ZONE 'UTC') AT TIME ZONE %[1]s)::date, 'YYYY-MM-DD'),
+			COALESCE(SUM(o2.pax),0)::int
+		FROM cloud_orders o2 JOIN pay ON pay.oid = TRIM(o2.id)
+		WHERE COALESCE(o2.pax,0) > 0 AND pay.last_paid >= %[2]s AND pay.last_paid < %[3]s%[4]s
+		GROUP BY 1`, tzLit(b.tz), b.rangeStart, b.rangeEnd, func() string {
+		if scopeIDs != nil {
+			return " AND o2.outlet_id = ANY($1)"
+		}
+		return ""
+	}())
+	paxByDay := map[string]int{}
+	var ptRows *sql.Rows
+	if scopeParam != nil {
+		ptRows, _ = database.DB.Query(paxTrendQuery, scopeParam)
+	} else {
+		ptRows, _ = database.DB.Query(paxTrendQuery)
+	}
+	if ptRows != nil {
+		for ptRows.Next() {
+			var d string
+			var px int
+			if ptRows.Scan(&d, &px) == nil {
+				paxByDay[d] = px
+			}
+		}
+		ptRows.Close()
+	}
+
 	stats.RevenueTrend = []models.DailyPoint{}
 	stats.OrderTrend = []models.DailyPoint{}
+	stats.PaxTrend = []models.DailyPoint{}
 	var trendRows *sql.Rows
 	var trendErr error
 	if scopeParam != nil {
@@ -449,6 +482,7 @@ func GetManagerDashboard(scopeIDs []string, dateFrom, dateTo string) (*models.Ma
 			if err := trendRows.Scan(&date, &revenue, &count); err == nil {
 				stats.RevenueTrend = append(stats.RevenueTrend, models.DailyPoint{Date: date, Value: revenue})
 				stats.OrderTrend = append(stats.OrderTrend, models.DailyPoint{Date: date, Value: count})
+				stats.PaxTrend = append(stats.PaxTrend, models.DailyPoint{Date: date, Value: float64(paxByDay[date])})
 			}
 		}
 	}

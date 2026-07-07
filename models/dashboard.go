@@ -73,6 +73,7 @@ type ManagerDashboardStats struct {
 	// Chart data
 	RevenueTrend   []DailyPoint         `json:"revenue_trend"`
 	OrderTrend     []DailyPoint         `json:"order_trend"`
+	PaxTrend       []DailyPoint         `json:"pax_trend"` // jumlah tamu per hari (untuk basket size)
 	HourlySales    []HourlyPoint        `json:"hourly_sales"`
 	PaymentMethods []PaymentMethodShare `json:"payment_methods"`
 	TopProducts    []TopProductRow      `json:"top_products"`
