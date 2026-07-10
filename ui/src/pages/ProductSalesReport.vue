@@ -19,6 +19,22 @@
             labelKey="label"
           />
         </div>
+        <div class="flex flex-col gap-1">
+          <label class="text-sm font-medium text-gray-700">Urutkan</label>
+          <select v-model="sortBy" @change="applyFilter"
+            class="rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
+            <option value="revenue">Pendapatan</option>
+            <option value="qty">Qty terjual</option>
+          </select>
+        </div>
+        <div class="flex flex-col gap-1">
+          <label class="text-sm font-medium text-gray-700">Arah</label>
+          <select v-model="sortDir" @change="applyFilter"
+            class="rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
+            <option value="desc">Tertinggi</option>
+            <option value="asc">Terendah</option>
+          </select>
+        </div>
         <button @click="applyFilter"
           class="px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors shadow-sm">
           Tampilkan
@@ -90,6 +106,8 @@ const page           = ref(1)
 watch(range, (r) => { dateFrom.value = r.from; dateTo.value = r.to; applyFilter() })
 watch(page, fetchReport)
 const selectedOutlet = ref('')
+const sortBy         = ref('revenue') // revenue | qty
+const sortDir        = ref('desc')    // desc | asc
 const outletOptions  = ref([])
 const loading        = ref(false)
 const errorMsg       = ref('')
@@ -131,7 +149,7 @@ async function fetchReport() {
   loading.value = true
   errorMsg.value = ''
   try {
-    const params = { date_from: dateFrom.value, date_to: dateTo.value, page: page.value, limit: PER_PAGE }
+    const params = { date_from: dateFrom.value, date_to: dateTo.value, page: page.value, limit: PER_PAGE, sort: sortBy.value, dir: sortDir.value }
     if (selectedOutlet.value) params.outlet_id = selectedOutlet.value
     report.value = await salesApi.getProductSalesReport(params)
   } catch (err) {

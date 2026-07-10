@@ -74,6 +74,57 @@ type PushOrderRequest struct {
 	Version      int         `json:"version"`
 	CreatedAt    string      `json:"created_at"`
 	UpdatedAt    string      `json:"updated_at"`
+	IsHolding    bool        `json:"is_holding"` // true = order Meja Titipan (parked check), bukan tamu aktif
+}
+
+// PushOrderItemTitipanRequest = payload entityType "order_item_titipan" dari app POS:
+// audit event titip (park) / tarik (pull) satu item Meja Titipan. Selalu operation
+// "create" (event log append-only), bukan mutasi state.
+type PushOrderItemTitipanRequest struct {
+	LocalID     string  `json:"local_id"` // order_items.id
+	Action      string  `json:"action"`   // "park" | "pull"
+	ProductName string  `json:"product_name"`
+	Qty         float64 `json:"qty"`
+	Price       float64 `json:"price"`
+	Subtotal    float64 `json:"subtotal"`
+	CategoryID  string  `json:"category_id"`
+	SourceTable string  `json:"source_table"`
+	TargetTable string  `json:"target_table"`
+	By          string  `json:"by"` // authorizer (park) / kasir (pull)
+	At          string  `json:"at"` // ISO-8601 UTC
+}
+
+// ── Laporan Titipan (Meja Titipan) ──────────────────────────
+type TitipanLogRow struct {
+	ID          string  `json:"id"`
+	OutletName  string  `json:"outlet_name"`
+	LocalID     string  `json:"local_id"`
+	Action      string  `json:"action"` // park | pull
+	ProductName string  `json:"product_name"`
+	Qty         float64 `json:"qty"`
+	Price       float64 `json:"price"`
+	Subtotal    float64 `json:"subtotal"`
+	SourceTable string  `json:"source_table"`
+	TargetTable string  `json:"target_table"`
+	PerformedBy string  `json:"performed_by"`
+	PerformedAt string  `json:"performed_at"`
+}
+
+type TitipanReportSummary struct {
+	ParkCount    int     `json:"park_count"`    // event titip
+	ParkAmount   float64 `json:"park_amount"`   // nilai barang dititip
+	PullCount    int     `json:"pull_count"`    // event tarik
+	PullAmount   float64 `json:"pull_amount"`   // nilai barang ditarik
+	HoldingCount int     `json:"holding_count"` // order titipan aktif (is_holding, belum bayar)
+	HoldingValue float64 `json:"holding_value"` // nilai barang yang masih menggantung
+}
+
+type TitipanReport struct {
+	Summary TitipanReportSummary `json:"summary"`
+	Data    []TitipanLogRow      `json:"data"`
+	Total   int                  `json:"total"`
+	Page    int                  `json:"page"`
+	Limit   int                  `json:"limit"`
 }
 
 // PushOrderItemVoidRequest = payload entityType "order_item_void" dari app POS:

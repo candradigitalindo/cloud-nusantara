@@ -19,7 +19,7 @@
             labelKey="label"
           />
         </div>
-        <button @click="page = 1; fetchReport()"
+        <button @click="page = 1; refetch()"
           class="px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors shadow-sm">
           Tampilkan
         </button>
@@ -95,6 +95,12 @@
           :class="activeTab === 'item' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'"
           @click="switchTab('item')">
           Void Item ({{ report.items_total }})
+        </button>
+        <button
+          class="px-4 py-2 text-sm font-medium rounded-lg transition-colors"
+          :class="activeTab === 'titipan' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'"
+          @click="switchTab('titipan')">
+          Titipan ({{ titipan?.total ?? 0 }})
         </button>
       </div>
 
@@ -244,6 +250,84 @@
           </div>
         </div>
       </AppCard>
+
+      <!-- Table: Meja Titipan (parked check — titip/tarik) -->
+      <AppCard v-if="activeTab === 'titipan'">
+        <!-- Ringkasan titipan -->
+        <div v-if="titipan" class="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
+          <div class="tp-stat tp-park"><span class="tp-l">Dititip (park)</span><span class="tp-v">{{ titipan.summary.park_count }}</span><span class="tp-s">{{ formatRupiah(titipan.summary.park_amount) }}</span></div>
+          <div class="tp-stat tp-pull"><span class="tp-l">Ditarik (pull)</span><span class="tp-v">{{ titipan.summary.pull_count }}</span><span class="tp-s">{{ formatRupiah(titipan.summary.pull_amount) }}</span></div>
+          <div class="tp-stat tp-hold"><span class="tp-l">Masih Menggantung</span><span class="tp-v">{{ titipan.summary.holding_count }}</span><span class="tp-s">{{ formatRupiah(titipan.summary.holding_value) }}</span></div>
+        </div>
+
+        <div v-if="!titipan || titipan.data.length === 0" class="text-center py-12 text-gray-400">
+          <svg class="w-12 h-12 mx-auto mb-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10"/></svg>
+          <p class="font-medium">Tidak ada aktivitas titipan pada periode ini</p>
+        </div>
+
+        <div v-else class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-gray-200 bg-gray-50/70">
+                <th class="text-left py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Waktu</th>
+                <th class="text-left py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Outlet</th>
+                <th class="text-left py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Aksi</th>
+                <th class="text-left py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Item</th>
+                <th class="text-right py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Nilai</th>
+                <th class="text-left py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Perpindahan</th>
+                <th class="text-left py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Oleh</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+              <tr v-for="row in titipan.data" :key="row.id" class="hover:bg-emerald-50/30 transition-colors">
+                <td class="py-3 px-3 whitespace-nowrap align-top">
+                  <p class="font-semibold text-gray-900 tabular-nums">{{ (row.performed_at || '—').slice(11) }}</p>
+                  <p class="text-xs text-gray-400">{{ (row.performed_at || '').slice(0,10) }}</p>
+                </td>
+                <td class="py-3 px-3 align-top">
+                  <span class="vr-pill"><span class="vr-dot" />{{ row.outlet_name || '—' }}</span>
+                </td>
+                <td class="py-3 px-3 align-top">
+                  <span class="tp-badge" :class="row.action === 'park' ? 'tp-b-park' : 'tp-b-pull'">
+                    {{ row.action === 'park' ? '↓ Titip' : '↑ Tarik' }}
+                  </span>
+                </td>
+                <td class="py-3 px-3 align-top">
+                  <p class="font-medium text-gray-800">{{ row.product_name }}</p>
+                  <p class="text-xs text-gray-400 tabular-nums">{{ Number(row.qty) }} × {{ formatRupiah(row.price) }}</p>
+                </td>
+                <td class="py-3 px-3 text-right align-top">
+                  <span class="font-bold text-gray-900 tabular-nums">{{ formatRupiah(row.subtotal) }}</span>
+                </td>
+                <td class="py-3 px-3 align-top text-xs text-gray-500 whitespace-nowrap">
+                  <span class="vr-meja">{{ row.source_table || '—' }}</span> → <span class="vr-meja">{{ row.target_table || '—' }}</span>
+                </td>
+                <td class="py-3 px-3 align-top">
+                  <div class="flex items-start gap-2">
+                    <span class="vr-avatar">{{ initials(row.performed_by) }}</span>
+                    <p class="font-medium text-gray-800 leading-tight">{{ row.performed_by || '—' }}</p>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination -->
+        <div v-if="titipan && titipan.total > titipan.limit" class="flex items-center justify-between pt-4 border-t border-gray-100 mt-4">
+          <p class="text-sm text-gray-500">
+            Menampilkan {{ (page-1)*titipan.limit + 1 }}–{{ Math.min(page*titipan.limit, titipan.total) }} dari {{ titipan.total }} data
+          </p>
+          <div class="flex gap-2">
+            <button :disabled="page <= 1"
+              class="px-3 py-1.5 text-sm border rounded-lg disabled:opacity-40 hover:bg-gray-50"
+              @click="page--; fetchTitipan()">← Prev</button>
+            <button :disabled="page * titipan.limit >= titipan.total"
+              class="px-3 py-1.5 text-sm border rounded-lg disabled:opacity-40 hover:bg-gray-50"
+              @click="page++; fetchTitipan()">Next →</button>
+          </div>
+        </div>
+      </AppCard>
     </template>
 
   </div>
@@ -262,20 +346,23 @@ import DateRangePicker from '@/components/ui/DateRangePicker.vue'
 const dateFrom      = ref(new Date(new Date().setDate(1)).toISOString().slice(0,10))
 const dateTo        = ref(new Date().toISOString().slice(0,10))
 const range          = ref({ from: dateFrom.value, to: dateTo.value, label: 'Bulan Ini' })
-watch(range, (r) => { dateFrom.value = r.from; dateTo.value = r.to; page.value = 1; fetchReport() })
+watch(range, (r) => { dateFrom.value = r.from; dateTo.value = r.to; page.value = 1; refetch() })
+function refetch() { activeTab.value === 'titipan' ? fetchTitipan() : fetchReport() }
 const selectedOutlet = ref('')
 const outletOptions  = ref([{ value: '', label: 'Semua Outlet' }])
 const report        = ref(null)
+const titipan       = ref(null)
 const loading       = ref(false)
 const errorMsg      = ref('')
 const page          = ref(1)
-const activeTab     = ref('order') // 'order' = void transaksi, 'item' = void item
+const activeTab     = ref('order') // 'order' = void transaksi, 'item' = void item, 'titipan' = meja titipan
 
 function switchTab(tab) {
   if (activeTab.value === tab) return
   activeTab.value = tab
   page.value = 1
-  fetchReport()
+  if (tab === 'titipan') fetchTitipan()
+  else fetchReport()
 }
 
 onMounted(async () => {
@@ -305,6 +392,24 @@ async function fetchReport() {
     report.value = await apiClient.get(`/admin/void-report?${params}`)
   } catch (err) {
     errorMsg.value = err?.message ?? 'Gagal memuat laporan void'
+  } finally {
+    loading.value = false
+  }
+}
+
+async function fetchTitipan() {
+  loading.value = true; errorMsg.value = ''
+  try {
+    const params = new URLSearchParams({
+      date_from: dateFrom.value,
+      date_to: dateTo.value,
+      page: page.value,
+      limit: 50,
+    })
+    if (selectedOutlet.value) params.set('outlet_id', selectedOutlet.value)
+    titipan.value = await apiClient.get(`/admin/titipan-report?${params}`)
+  } catch (err) {
+    errorMsg.value = err?.message ?? 'Gagal memuat laporan titipan'
   } finally {
     loading.value = false
   }
@@ -372,4 +477,16 @@ function initials(name) {
 .vr-chip { display: inline-flex; align-items: center; padding: .12rem .5rem; border-radius: .45rem; background: #f3f4f6; color: #374151; font-size: .72rem; white-space: nowrap; max-width: 11rem; overflow: hidden; text-overflow: ellipsis; }
 .vr-chip-more { background: rgba(239,68,68,.08); color: #b91c1c; font-weight: 700; cursor: help; }
 .vr-avatar { display: inline-flex; align-items: center; justify-content: center; width: 1.85rem; height: 1.85rem; border-radius: 50%; background: rgba(239,68,68,.1); color: #b91c1c; font-size: .68rem; font-weight: 800; flex-shrink: 0; }
+
+/* Titipan */
+.tp-stat { display: flex; flex-direction: column; gap: .1rem; padding: .75rem .9rem; border-radius: .9rem; border: 1px solid; }
+.tp-l { font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+.tp-v { font-size: 1.5rem; font-weight: 800; line-height: 1.1; }
+.tp-s { font-size: .72rem; opacity: .8; }
+.tp-park { background: rgba(59,130,246,.06); border-color: rgba(59,130,246,.25); color: #1d4ed8; }
+.tp-pull { background: rgba(16,185,129,.06); border-color: rgba(16,185,129,.25); color: #047857; }
+.tp-hold { background: rgba(245,158,11,.07); border-color: rgba(245,158,11,.3); color: #b45309; }
+.tp-badge { display: inline-block; padding: .15rem .55rem; border-radius: 999px; font-size: .7rem; font-weight: 700; white-space: nowrap; }
+.tp-b-park { background: rgba(59,130,246,.12); color: #1d4ed8; }
+.tp-b-pull { background: rgba(16,185,129,.14); color: #047857; }
 </style>

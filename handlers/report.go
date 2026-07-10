@@ -69,8 +69,10 @@ func GetProductSalesReport(c *fiber.Ctx) error {
 
 	scopeIDs := getOutletScope(c)
 	page, limit := getPagination(c)
+	sortBy := c.Query("sort", "revenue")   // revenue | qty
+	sortDir := c.Query("dir", "desc")      // desc | asc
 
-	report, err := services.GetProductSalesReport(dateFrom, dateTo, outletID, scopeIDs, page, limit)
+	report, err := services.GetProductSalesReport(dateFrom, dateTo, outletID, sortBy, sortDir, scopeIDs, page, limit)
 	if err != nil {
 		log.Printf("GetProductSalesReport error: %v", err)
 		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
@@ -207,6 +209,29 @@ func GetVoidReport(c *fiber.Ctx) error {
 		log.Printf("GetVoidReport error: %v", err)
 		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
 			Success: false, Error: "Gagal memuat laporan void.",
+		})
+	}
+	return c.JSON(models.APIResponse{Success: true, Data: report})
+}
+
+// GetTitipanReport — laporan Meja Titipan (audit titip/tarik + barang menggantung).
+func GetTitipanReport(c *fiber.Ctx) error {
+	dateFrom, dateTo, err := getDateRange(c)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(models.APIResponse{Success: false, Error: err.Error()})
+	}
+	outletID := c.Query("outlet_id", "")
+	if outletID != "" && !validateOutletAccess(c, outletID) {
+		return c.Status(fiber.StatusForbidden).JSON(models.APIResponse{Success: false, Error: "Akses outlet tidak diizinkan"})
+	}
+	page, limit := getPagination(c)
+	scopeIDs := getOutletScope(c)
+
+	report, err := services.GetTitipanReport(dateFrom, dateTo, outletID, scopeIDs, page, limit)
+	if err != nil {
+		log.Printf("GetTitipanReport error: %v", err)
+		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
+			Success: false, Error: "Gagal memuat laporan titipan.",
 		})
 	}
 	return c.JSON(models.APIResponse{Success: true, Data: report})

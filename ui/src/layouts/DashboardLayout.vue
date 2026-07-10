@@ -387,7 +387,7 @@ const NAV_ITEMS_DATA = [
       { to: '/profit-loss-report',   label: 'Profit & Loss', permission: 'reports.pnl.view' },
       { to: '/balance-report',       label: 'Laporan Neraca', permission: 'reports.balance.view' },
       { to: '/tax-report',           label: 'Laporan Pajak', permission: 'reports.tax.view' },
-      { to: '/void-report',          label: 'Laporan Void', permission: 'reports.void.view' },
+      { to: '/void-report',          label: 'Void & Titipan', permission: 'reports.void.view' },
       { to: '/discount-report',      label: 'Diskon & Komplimen', permission: 'reports.discount.view' },
       { to: '/bank-accounts',         label: 'Data Rekening', permission: 'finance.bank.view' },
     ],
@@ -428,6 +428,7 @@ const NAV_ITEMS_DATA = [
     children: [
       { to: '/warehouse-dashboard', label: 'Dashboard', permission: 'warehouse_dashboard.view' },
       { to: '/stock-items',     label: 'Item Stok', permission: 'stockitems.view' },
+      { to: '/goods-receipts',  label: 'Penerimaan Barang', permission: 'stockledger.view' },
       { to: '/stock-transfers', label: 'Transfer Stok', permission: 'stocktransfers.view' },
       { to: '/stock-wastes',    label: 'Stok Rusak/Hilang', permission: 'stockwastes.view' },
       { to: '/stock-ledger',    label: 'Buku Stok', permission: 'stockledger.view' },

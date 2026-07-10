@@ -3,6 +3,7 @@ package services
 import (
 	"cloud-pos/database"
 	"cloud-pos/models"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -171,6 +172,31 @@ func SaveOrderItemVoid(outletID string, req models.PushOrderItemVoidRequest) (st
 	go logSync(outletID, "push_order_item_void", "order_item_void", 1, "success", "")
 	BroadcastSync("order_item_void", outletID)
 	return cloudID, nil
+}
+
+// SaveOrderItemTitipan menyimpan audit event titip (park) / tarik (pull) satu item
+// Meja Titipan sebagai log append-only. Idempotent: retry outbox dengan
+// (item, aksi, waktu) yang sama tidak menggandakan baris.
+func SaveOrderItemTitipan(outletID string, req models.PushOrderItemTitipanRequest) (string, error) {
+	var id int64
+	err := database.DB.QueryRow(
+		`INSERT INTO order_item_titipan_logs
+			(outlet_id, local_id, action, product_name, qty, price, subtotal,
+			 category_id, source_table, target_table, performed_by, performed_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+		ON CONFLICT (outlet_id, local_id, action, performed_at) DO NOTHING
+		RETURNING id`,
+		outletID, req.LocalID, req.Action, req.ProductName, req.Qty, req.Price, req.Subtotal,
+		req.CategoryID, req.SourceTable, req.TargetTable, req.By, parseTime(req.At),
+	).Scan(&id)
+	// ON CONFLICT DO NOTHING → tidak ada baris dikembalikan pada duplikat (idempotent).
+	if err != nil && err != sql.ErrNoRows {
+		return "", err
+	}
+
+	go logSync(outletID, "push_order_item_titipan", "order_item_titipan", 1, "success", "")
+	BroadcastSync("order_item_titipan", outletID)
+	return req.LocalID, nil
 }
 
 func SaveCashMovement(outletID string, req models.PushCashMovementRequest) (string, error) {
@@ -451,6 +477,24 @@ func ProcessBatchSync(outletID string, req models.BatchSyncRequest) models.Batch
 			} else {
 				result.LocalID = voidReq.LocalID
 				if cloudID, err := SaveOrderItemVoid(outletID, voidReq); err != nil {
+					result.Status = "failed"
+					result.Error = err.Error()
+					resp.Failed++
+				} else {
+					result.CloudID = cloudID
+					resp.Success++
+				}
+			}
+
+		case "order_item_titipan":
+			var tReq models.PushOrderItemTitipanRequest
+			if err := json.Unmarshal(dataBytes, &tReq); err != nil {
+				result.Status = "failed"
+				result.Error = "Invalid order_item_titipan data: " + err.Error()
+				resp.Failed++
+			} else {
+				result.LocalID = tReq.LocalID
+				if cloudID, err := SaveOrderItemTitipan(outletID, tReq); err != nil {
 					result.Status = "failed"
 					result.Error = err.Error()
 					resp.Failed++

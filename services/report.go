@@ -107,7 +107,7 @@ func GetSalesReport(dateFrom, dateTo, outletID string, scopeIDs []string, page, 
 		SELECT COUNT(*)::int, COALESCE(SUM(total_amount), 0)
 		FROM cloud_orders
 		WHERE COALESCE(payment_info->>'payment_status','unpaid') NOT IN ('paid')
-		  AND NULLIF(payment_info->>'voided_at','') IS NULL
+		  AND NULLIF(payment_info->>'voided_at','') IS NULL AND COALESCE(is_holding,false) = false
 		  AND created_at >= tz_day_start($1::date) AND created_at < tz_day_start($2::date + 1)`
 	unpaidArgs := []interface{}{dateFrom, dateTo}
 	if filterIDs != nil {
@@ -209,7 +209,7 @@ func GetSalesReport(dateFrom, dateTo, outletID string, scopeIDs []string, page, 
 			-- status yang menyimpan status dapur: cooking/served/completed), agar
 			-- definisinya sama dengan ringkasan dan tidak salah kolom.
 			WHERE COALESCE(payment_info->>'payment_status','unpaid') NOT IN ('paid')
-			  AND NULLIF(payment_info->>'voided_at','') IS NULL
+			  AND NULLIF(payment_info->>'voided_at','') IS NULL AND COALESCE(is_holding,false) = false
 			  AND created_at >= tz_day_start($1::date) AND created_at < tz_day_start($2::date + 1)
 			GROUP BY outlet_id
 		) uq ON uq.outlet_id = t.outlet_id
@@ -321,7 +321,7 @@ func GetUnpaidOrders(outletID, status, dateFrom, dateTo string, scopeIDs []strin
 		filterIDs = scopeIDs
 	}
 
-	where := `WHERE COALESCE(o.payment_info->>'payment_status','unpaid') NOT IN ('paid') AND NULLIF(o.payment_info->>'voided_at','') IS NULL`
+	where := `WHERE COALESCE(o.payment_info->>'payment_status','unpaid') NOT IN ('paid') AND NULLIF(o.payment_info->>'voided_at','') IS NULL AND COALESCE(o.is_holding,false) = false`
 	args := []interface{}{}
 	paramIdx := 1
 
@@ -397,11 +397,11 @@ func GetUnpaidOrders(outletID, status, dateFrom, dateTo string, scopeIDs []strin
 	return report, nil
 }
 
-func GetProductSalesReport(dateFrom, dateTo, outletID string, scopeIDs []string, page, limit int) (*models.ProductSalesResponse, error) {
+func GetProductSalesReport(dateFrom, dateTo, outletID, sortBy, sortDir string, scopeIDs []string, page, limit int) (*models.ProductSalesResponse, error) {
 	conds := []string{
 		"o.created_at >= tz_day_start($1::date)", "o.created_at < tz_day_start($2::date + 1)",
 		// Order yang di-void bukan penjualan.
-		"NULLIF(o.payment_info->>'voided_at','') IS NULL",
+		"NULLIF(o.payment_info->>'voided_at','') IS NULL AND COALESCE(o.is_holding,false) = false",
 	}
 	args := []interface{}{dateFrom, dateTo}
 	idx := 3
@@ -449,6 +449,16 @@ func GetProductSalesReport(dateFrom, dateTo, outletID string, scopeIDs []string,
 			jsonb_array_elements(COALESCE(o.items, '[]'::jsonb)) AS item
 		%s`, whereSQL)
 
+	// Whitelist kolom & arah urut (cegah SQL injection — nilai disuntik literal).
+	orderCol := "total_revenue"
+	if sortBy == "qty" {
+		orderCol = "total_qty"
+	}
+	orderDir := "DESC"
+	if strings.EqualFold(sortDir, "asc") {
+		orderDir = "ASC"
+	}
+
 	offset := (page - 1) * limit
 	query := fmt.Sprintf(`
 		SELECT outlet_name, product_name, category_name, total_qty, total_revenue,
@@ -462,8 +472,8 @@ func GetProductSalesReport(dateFrom, dateTo, outletID string, scopeIDs []string,
 			FROM (%s) sub
 			GROUP BY outlet_name, product_name, category_name
 		) agg
-		ORDER BY total_revenue DESC
-		LIMIT $%d OFFSET $%d`, baseSub, idx, idx+1)
+		ORDER BY %s %s, total_revenue DESC
+		LIMIT $%d OFFSET $%d`, baseSub, orderCol, orderDir, idx, idx+1)
 	args = append(args, limit, offset)
 
 	rows, err := database.DB.Query(query, args...)
@@ -810,7 +820,7 @@ func GetBalanceReport(dateFrom, dateTo, outletID string, scopeIDs []string) (*mo
 			SELECT outlet_id, SUM(total_amount) AS unpaid_amount
 			FROM cloud_orders
 			WHERE COALESCE(payment_info->>'payment_status','unpaid') NOT IN ('paid')
-			  AND NULLIF(payment_info->>'voided_at','') IS NULL
+			  AND NULLIF(payment_info->>'voided_at','') IS NULL AND COALESCE(is_holding,false) = false
 			  AND created_at >= tz_day_start($1::date) AND created_at < tz_day_start($2::date + 1)
 			GROUP BY outlet_id
 		) uq ON uq.outlet_id = o.id
@@ -1386,7 +1396,7 @@ func GetGeneralLedger(dateFrom, dateTo, outletID, accountFilter string, scopeIDs
 		FROM cloud_orders o
 		LEFT JOIN outlets ot ON ot.id = o.outlet_id
 		WHERE COALESCE(o.payment_info->>'payment_status','unpaid') NOT IN ('paid')
-		  AND NULLIF(o.payment_info->>'voided_at','') IS NULL
+		  AND NULLIF(o.payment_info->>'voided_at','') IS NULL AND COALESCE(o.is_holding,false) = false
 		  AND o.created_at >= tz_day_start($1::date) AND o.created_at < tz_day_start($2::date + 1)` + unpFilter + `
 		ORDER BY o.created_at`
 
@@ -1703,7 +1713,7 @@ func GetVoidReport(dateFrom, dateTo, outletID string, scopeIDs []string, page, l
 func GetDiscountReport(dateFrom, dateTo, outletID string, scopeIDs []string, page, limit int) (*models.DiscountReport, error) {
 	offset := (page - 1) * limit
 
-	conds := []string{"NULLIF(o.payment_info->>'voided_at','') IS NULL"}
+	conds := []string{"NULLIF(o.payment_info->>'voided_at','') IS NULL AND COALESCE(o.is_holding,false) = false"}
 	args := []interface{}{}
 	idx := 1
 	if outletID != "" {
@@ -1789,4 +1799,95 @@ func GetDiscountReport(dateFrom, dateTo, outletID string, scopeIDs []string, pag
 		Page:    page,
 		Limit:   limit,
 	}, nil
+}
+
+// GetTitipanReport — laporan Meja Titipan: log audit titip/tarik (per rentang
+// tanggal) + ringkasan barang yang masih menggantung (order is_holding aktif).
+func GetTitipanReport(dateFrom, dateTo, outletID string, scopeIDs []string, page, limit int) (*models.TitipanReport, error) {
+	offset := (page - 1) * limit
+	const tz = "COALESCE((SELECT value FROM app_settings WHERE key='timezone'),'Asia/Jakarta')"
+
+	conds := []string{"1=1"}
+	args := []interface{}{}
+	idx := 1
+	if outletID != "" {
+		conds = append(conds, fmt.Sprintf("l.outlet_id = $%d", idx))
+		args = append(args, outletID)
+		idx++
+	} else if scopeIDs != nil {
+		conds = append(conds, fmt.Sprintf("l.outlet_id = ANY($%d::text[])", idx))
+		args = append(args, pq.Array(scopeIDs))
+		idx++
+	}
+	if dateFrom != "" {
+		conds = append(conds, fmt.Sprintf("tz_date(l.performed_at) >= $%d::date", idx))
+		args = append(args, dateFrom)
+		idx++
+	}
+	if dateTo != "" {
+		conds = append(conds, fmt.Sprintf("tz_date(l.performed_at) <= $%d::date", idx))
+		args = append(args, dateTo)
+		idx++
+	}
+	where := "WHERE " + strings.Join(conds, " AND ")
+
+	var sum models.TitipanReportSummary
+	var total int
+	if err := database.DB.QueryRow(fmt.Sprintf(`
+		SELECT COUNT(*),
+			COUNT(*) FILTER (WHERE action='park'), COALESCE(SUM(subtotal) FILTER (WHERE action='park'),0),
+			COUNT(*) FILTER (WHERE action='pull'), COALESCE(SUM(subtotal) FILTER (WHERE action='pull'),0)
+		FROM order_item_titipan_logs l %s`, where), args...).
+		Scan(&total, &sum.ParkCount, &sum.ParkAmount, &sum.PullCount, &sum.PullAmount); err != nil {
+		return nil, err
+	}
+
+	// Barang yang MASIH menggantung: order is_holding aktif (belum bayar, tidak void).
+	holdConds := []string{"is_holding = true",
+		"COALESCE(payment_info->>'payment_status','unpaid') NOT IN ('paid')",
+		"NULLIF(payment_info->>'voided_at','') IS NULL"}
+	holdArgs := []interface{}{}
+	hidx := 1
+	if outletID != "" {
+		holdConds = append(holdConds, fmt.Sprintf("outlet_id = $%d", hidx))
+		holdArgs = append(holdArgs, outletID)
+		hidx++
+	} else if scopeIDs != nil {
+		holdConds = append(holdConds, fmt.Sprintf("outlet_id = ANY($%d::text[])", hidx))
+		holdArgs = append(holdArgs, pq.Array(scopeIDs))
+		hidx++
+	}
+	database.DB.QueryRow(fmt.Sprintf(
+		`SELECT COUNT(*), COALESCE(SUM(total_amount),0) FROM cloud_orders WHERE %s`,
+		strings.Join(holdConds, " AND ")), holdArgs...).Scan(&sum.HoldingCount, &sum.HoldingValue)
+
+	dataArgs := append(append([]interface{}{}, args...), limit, offset)
+	rows, err := database.DB.Query(fmt.Sprintf(`
+		SELECT l.id::text, COALESCE(o.name,''), l.local_id, l.action, l.product_name,
+			l.qty, l.price, l.subtotal, l.source_table, l.target_table, l.performed_by,
+			COALESCE(to_char((l.performed_at AT TIME ZONE 'UTC') AT TIME ZONE %s, 'YYYY-MM-DD HH24:MI'),'')
+		FROM order_item_titipan_logs l
+		LEFT JOIN outlets o ON o.id = l.outlet_id
+		%s
+		ORDER BY l.performed_at DESC NULLS LAST
+		LIMIT $%d OFFSET $%d`, tz, where, idx, idx+1), dataArgs...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	data := make([]models.TitipanLogRow, 0)
+	for rows.Next() {
+		var r models.TitipanLogRow
+		if err := rows.Scan(&r.ID, &r.OutletName, &r.LocalID, &r.Action, &r.ProductName,
+			&r.Qty, &r.Price, &r.Subtotal, &r.SourceTable, &r.TargetTable, &r.PerformedBy, &r.PerformedAt); err != nil {
+			return nil, err
+		}
+		data = append(data, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return &models.TitipanReport{Summary: sum, Data: data, Total: total, Page: page, Limit: limit}, nil
 }

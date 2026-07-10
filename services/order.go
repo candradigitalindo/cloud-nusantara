@@ -44,8 +44,8 @@ func SaveOrder(outletID string, req models.PushOrderRequest) (string, error) {
 	err := database.DB.QueryRow(
 		`INSERT INTO cloud_orders (id, local_id, outlet_id, outlet_code, table_number,
 			customer_name, customer_phone, orderer_name, created_by, pax, total_amount, status, items, payment_info, version,
-			created_at, updated_at, synced_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW())
+			created_at, updated_at, is_holding, synced_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NOW())
 		ON CONFLICT (outlet_id, local_id) DO UPDATE SET
 			id = EXCLUDED.id,
 			table_number = EXCLUDED.table_number,
@@ -60,12 +60,13 @@ func SaveOrder(outletID string, req models.PushOrderRequest) (string, error) {
 			payment_info = EXCLUDED.payment_info,
 			version = EXCLUDED.version,
 			updated_at = EXCLUDED.updated_at,
+			is_holding = EXCLUDED.is_holding,
 			synced_at = NOW()
 		RETURNING id`,
 		cloudID, cloudID, outletID, req.OutletCode, req.TableNumber,
 		req.CustomerName, req.CustomerPhone, req.OrdererName, req.CreatedBy, req.Pax, req.TotalAmount, req.Status,
 		string(itemsJSON), string(paymentJSON), req.Version,
-		parseTime(req.CreatedAt), parseTime(req.UpdatedAt),
+		parseTime(req.CreatedAt), parseTime(req.UpdatedAt), req.IsHolding,
 	).Scan(&cloudID)
 
 	if err != nil {

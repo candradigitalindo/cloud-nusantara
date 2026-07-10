@@ -130,8 +130,8 @@ func GetDashboardStats(dateFrom, dateTo string, scopeIDs []string) (*models.Dash
 			COUNT(*),
 			COUNT(CASE WHEN created_at >= %[1]s AND created_at < %[2]s THEN 1 END),
 			COUNT(CASE WHEN created_at >= %[3]s AND created_at < %[1]s THEN 1 END),
-			COUNT(CASE WHEN COALESCE(payment_info->>'payment_status','unpaid') NOT IN ('paid') AND NULLIF(payment_info->>'voided_at','') IS NULL THEN 1 END),
-			COALESCE(SUM(CASE WHEN COALESCE(payment_info->>'payment_status','unpaid') NOT IN ('paid') AND NULLIF(payment_info->>'voided_at','') IS NULL THEN total_amount END),0)
+			COUNT(CASE WHEN COALESCE(payment_info->>'payment_status','unpaid') NOT IN ('paid') AND NULLIF(payment_info->>'voided_at','') IS NULL AND COALESCE(is_holding,false) = false THEN 1 END),
+			COALESCE(SUM(CASE WHEN COALESCE(payment_info->>'payment_status','unpaid') NOT IN ('paid') AND NULLIF(payment_info->>'voided_at','') IS NULL AND COALESCE(is_holding,false) = false THEN total_amount END),0)
 		FROM cloud_orders WHERE 1=1%[4]s`, b.todayStart, b.tomorrowStart, b.yesterdayStart, outletFilter)
 	if err := run(ordQuery,
 		&stats.TotalOrders, &stats.TodayOrders, &stats.TodayOrdersPrev,
@@ -183,7 +183,7 @@ func GetDashboardStats(dateFrom, dateTo string, scopeIDs []string) (*models.Dash
 		LEFT JOIN cloud_transactions t ON t.outlet_id = o.id
 		LEFT JOIN (
 			SELECT outlet_id, COUNT(*) AS cnt, SUM(total_amount) AS amt
-			FROM cloud_orders WHERE COALESCE(payment_info->>'payment_status','unpaid') NOT IN ('paid') AND NULLIF(payment_info->>'voided_at','') IS NULL
+			FROM cloud_orders WHERE COALESCE(payment_info->>'payment_status','unpaid') NOT IN ('paid') AND NULLIF(payment_info->>'voided_at','') IS NULL AND COALESCE(is_holding,false) = false
 			GROUP BY outlet_id
 		) u ON u.outlet_id = o.id
 		WHERE o.is_active = true
@@ -201,7 +201,7 @@ func GetDashboardStats(dateFrom, dateTo string, scopeIDs []string) (*models.Dash
 		LEFT JOIN cloud_transactions t ON t.outlet_id = o.id
 		LEFT JOIN (
 			SELECT outlet_id, COUNT(*) AS cnt, SUM(total_amount) AS amt
-			FROM cloud_orders WHERE COALESCE(payment_info->>'payment_status','unpaid') NOT IN ('paid') AND NULLIF(payment_info->>'voided_at','') IS NULL
+			FROM cloud_orders WHERE COALESCE(payment_info->>'payment_status','unpaid') NOT IN ('paid') AND NULLIF(payment_info->>'voided_at','') IS NULL AND COALESCE(is_holding,false) = false
 			GROUP BY outlet_id
 		) u ON u.outlet_id = o.id
 		WHERE o.is_active = true AND o.id = ANY($1)
@@ -221,7 +221,7 @@ func GetDashboardStats(dateFrom, dateTo string, scopeIDs []string) (*models.Dash
 		LEFT JOIN cloud_transactions t ON t.outlet_id = o.id
 		LEFT JOIN (
 			SELECT outlet_id, COUNT(*) AS cnt, SUM(total_amount) AS amt
-			FROM cloud_orders WHERE COALESCE(payment_info->>'payment_status','unpaid') NOT IN ('paid') AND NULLIF(payment_info->>'voided_at','') IS NULL
+			FROM cloud_orders WHERE COALESCE(payment_info->>'payment_status','unpaid') NOT IN ('paid') AND NULLIF(payment_info->>'voided_at','') IS NULL AND COALESCE(is_holding,false) = false
 			GROUP BY outlet_id
 		) u ON u.outlet_id = o.id
 		WHERE o.is_active = true
@@ -241,7 +241,7 @@ func GetDashboardStats(dateFrom, dateTo string, scopeIDs []string) (*models.Dash
 		LEFT JOIN cloud_transactions t ON t.outlet_id = o.id
 		LEFT JOIN (
 			SELECT outlet_id, COUNT(*) AS cnt, SUM(total_amount) AS amt
-			FROM cloud_orders WHERE COALESCE(payment_info->>'payment_status','unpaid') NOT IN ('paid') AND NULLIF(payment_info->>'voided_at','') IS NULL
+			FROM cloud_orders WHERE COALESCE(payment_info->>'payment_status','unpaid') NOT IN ('paid') AND NULLIF(payment_info->>'voided_at','') IS NULL AND COALESCE(is_holding,false) = false
 			GROUP BY outlet_id
 		) u ON u.outlet_id = o.id
 		WHERE o.is_active = true AND o.id = ANY($1)
@@ -409,8 +409,8 @@ func GetManagerDashboard(scopeIDs []string, dateFrom, dateTo string) (*models.Ma
 		SELECT
 			(SELECT COUNT(*) FROM outlets WHERE is_active = true%s),
 			(SELECT COUNT(*) FROM cloud_products WHERE is_deleted = false%s),
-			(SELECT COUNT(*) FROM cloud_orders WHERE COALESCE(payment_info->>'payment_status','unpaid') NOT IN ('paid') AND NULLIF(payment_info->>'voided_at','') IS NULL%s),
-			(SELECT COALESCE(SUM(total_amount),0) FROM cloud_orders WHERE COALESCE(payment_info->>'payment_status','unpaid') NOT IN ('paid') AND NULLIF(payment_info->>'voided_at','') IS NULL%s)
+			(SELECT COUNT(*) FROM cloud_orders WHERE COALESCE(payment_info->>'payment_status','unpaid') NOT IN ('paid') AND NULLIF(payment_info->>'voided_at','') IS NULL AND COALESCE(is_holding,false) = false%s),
+			(SELECT COALESCE(SUM(total_amount),0) FROM cloud_orders WHERE COALESCE(payment_info->>'payment_status','unpaid') NOT IN ('paid') AND NULLIF(payment_info->>'voided_at','') IS NULL AND COALESCE(is_holding,false) = false%s)
 	`, outletsIDFilter, outletFilter, outletFilter, outletFilter)
 
 	if scopeParam != nil {
@@ -595,7 +595,7 @@ func GetManagerDashboard(scopeIDs []string, dateFrom, dateTo string) (*models.Ma
 			(SELECT COALESCE(SUM(total_amount),0) FROM cloud_orders co
 				WHERE co.outlet_id = o.id
 				AND COALESCE(co.payment_info->>'payment_status','unpaid') NOT IN ('paid')
-				AND NULLIF(co.payment_info->>'voided_at','') IS NULL),
+				AND NULLIF(co.payment_info->>'voided_at','') IS NULL AND COALESCE(co.is_holding,false) = false),
 			(SELECT TO_CHAR(MAX(sl.created_at), 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
 				FROM sync_logs sl WHERE sl.outlet_id = o.id AND sl.action != 'restore')
 		FROM outlets o

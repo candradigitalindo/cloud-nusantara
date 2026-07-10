@@ -149,6 +149,7 @@ func Setup(app *fiber.App, cfg *config.Config) {
 	admin.Get("/profit-loss-report", middleware.RequirePermission("reports.pnl.view"), handlers.GetProfitLossReport)
 	admin.Get("/general-ledger", middleware.RequirePermission("reports.ledger.view"), handlers.GetGeneralLedger)
 	admin.Get("/void-report", middleware.RequirePermission("reports.void.view"), handlers.GetVoidReport)
+	admin.Get("/titipan-report", middleware.RequirePermission("reports.void.view"), handlers.GetTitipanReport)
 	admin.Get("/discount-report", middleware.RequirePermission("reports.discount.view"), handlers.GetDiscountReport)
 
 	// Products & Categories — CRUD granular
@@ -281,6 +282,12 @@ func Setup(app *fiber.App, cfg *config.Config) {
 	// Stock Wastes
 	admin.Get("/stock-wastes", middleware.RequirePermission("stockwastes.view"), handlers.ListStockWastes)
 	admin.Post("/stock-wastes", middleware.RequirePermission("stockwastes.create"), handlers.CreateStockWaste)
+
+	// Penerimaan Barang (Goods Receipt / GRN) — stok masuk ke gudang.
+	// Baca: siapa pun pemirsa modul gudang; tulis: pemegang stockledger.adjust.
+	admin.Get("/goods-receipts", middleware.RequireAnyPermission(whView...), handlers.ListGoodsReceipts)
+	admin.Get("/goods-receipts/:id", middleware.RequireAnyPermission(whView...), handlers.GetGoodsReceipt)
+	admin.Post("/goods-receipts", middleware.RequirePermission("stockledger.adjust"), handlers.CreateGoodsReceipt)
 
 	// Settings — view + update only (no create/delete for settings)
 	admin.Get("/settings", middleware.RequirePermission("settings.company.view"), handlers.GetAllSettings)

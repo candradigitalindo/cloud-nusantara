@@ -504,3 +504,48 @@ func GetWarehouseDashboard(c *fiber.Ctx) error {
 	}
 	return c.JSON(models.APIResponse{Success: true, Data: data})
 }
+
+// ── Penerimaan Barang (Goods Receipt / GRN) ───────────────────
+
+// CreateGoodsReceipt mencatat penerimaan barang ke gudang (stok masuk).
+func CreateGoodsReceipt(c *fiber.Ctx) error {
+	var req models.GoodsReceiptRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(400).JSON(models.APIResponse{Error: "body tidak valid"})
+	}
+	if !services.WarehouseMutableInScope(req.WarehouseID, getOutletScope(c)) {
+		return c.Status(403).JSON(models.APIResponse{Error: "Akses gudang tidak diizinkan"})
+	}
+	actor, _ := c.Locals("admin_username").(string)
+	g, err := services.CreateGoodsReceipt(req, actor)
+	if err != nil {
+		return c.Status(400).JSON(models.APIResponse{Error: err.Error()})
+	}
+	return c.Status(201).JSON(models.APIResponse{Success: true, Data: g, Message: "Penerimaan barang berhasil dicatat"})
+}
+
+// ListGoodsReceipts mengambil daftar dokumen penerimaan barang (scoped).
+func ListGoodsReceipts(c *fiber.Ctx) error {
+	page, limit := getPagination(c)
+	list, total, err := services.ListGoodsReceipts(c.Query("warehouse_id"), getOutletScope(c), page, limit)
+	if err != nil {
+		return c.Status(500).JSON(models.APIResponse{Error: err.Error()})
+	}
+	totalPages := (total + limit - 1) / limit
+	if totalPages < 1 {
+		totalPages = 1
+	}
+	return c.JSON(models.PaginatedResponse{Success: true, Data: list, Page: page, Limit: limit, Total: total, TotalPages: totalPages})
+}
+
+// GetGoodsReceipt mengambil detail satu dokumen penerimaan barang.
+func GetGoodsReceipt(c *fiber.Ctx) error {
+	if !services.GoodsReceiptInScope(c.Params("id"), getOutletScope(c)) {
+		return c.Status(403).JSON(models.APIResponse{Error: "Akses penerimaan tidak diizinkan"})
+	}
+	g, err := services.GetGoodsReceipt(c.Params("id"))
+	if err != nil {
+		return c.Status(404).JSON(models.APIResponse{Error: "Penerimaan tidak ditemukan"})
+	}
+	return c.JSON(models.APIResponse{Success: true, Data: g})
+}

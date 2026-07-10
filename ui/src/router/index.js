@@ -83,6 +83,7 @@ const StockItems          = () => import('@/pages/StockItems.vue')
 const StockWastes         = () => import('@/pages/StockWastes.vue')
 const StockTransfers      = () => import('@/pages/StockTransfers.vue')
 const StockLedger         = () => import('@/pages/StockLedger.vue')
+const GoodsReceipt        = () => import('@/pages/GoodsReceipt.vue')
 const Recipes             = () => import('@/pages/Recipes.vue')
 const DashboardLayout = () => import('@/layouts/DashboardLayout.vue')
 const AuthLayout     = () => import('@/layouts/AuthLayout.vue')
@@ -276,7 +277,7 @@ const routes = [
         path: 'void-report',
         name: 'VoidReport',
         component: VoidReport,
-        meta: { title: 'Laporan Void — Cloud POS', requiresAuth: true, permission: 'reports.void.view' },
+        meta: { title: 'Void & Titipan — Cloud POS', requiresAuth: true, permission: 'reports.void.view' },
       },
       {
         path: 'discount-report',
@@ -380,6 +381,12 @@ const routes = [
         name: 'StockTransfers',
         component: StockTransfers,
         meta: { title: 'Transfer Stok — Cloud POS', requiresAuth: true, permission: 'stocktransfers.view' },
+      },
+      {
+        path: 'goods-receipts',
+        name: 'GoodsReceipt',
+        component: GoodsReceipt,
+        meta: { title: 'Penerimaan Barang — Cloud POS', requiresAuth: true, permission: 'stockledger.view' },
       },
       {
         path: 'stock-wastes',

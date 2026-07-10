@@ -132,34 +132,34 @@
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14 7 21 7 21 14"/></svg>
               </div>
               <div>
-                <h3 class="panel-title">Basket Size &amp; Pendapatan</h3>
-                <p class="panel-sub">Perbandingan tren relatif (rata-rata = 100) · {{ periodLabel }}</p>
+                <h3 class="panel-title">Penjualan &amp; Rata-rata Belanja</h3>
+                <p class="panel-sub">Average check &amp; spend per tamu · {{ periodLabel }}</p>
               </div>
             </div>
             <div class="flex flex-wrap items-center justify-end gap-x-4 gap-y-1 text-xs">
-              <span class="legend-dot"><span class="ld" style="background:#3b82f6"></span>Pendapatan</span>
-              <span class="legend-dot"><span class="ld" style="background:#8b5cf6"></span>Belanja/Transaksi</span>
-              <span class="legend-dot"><span class="ld" style="background:#10b981"></span>Belanja/Pax</span>
+              <span class="legend-dot"><span class="ld" style="background:#93c5fd"></span>Penjualan</span>
+              <span class="legend-dot"><span class="ld" style="background:#8b5cf6"></span>Rata-rata/Transaksi</span>
+              <span class="legend-dot"><span class="ld" style="background:#10b981"></span>Rata-rata/Tamu</span>
             </div>
           </div>
-          <!-- mini summary strip: fokus indikator basket size -->
+          <!-- mini summary strip: metrik standar F&B (rupiah nyata) -->
           <div class="trend-stats">
             <div class="ts-item">
-              <span class="ts-label">Belanja / Tamu</span>
-              <span class="ts-value">{{ formatRupiah(trendTotals.basketPerPax) }}</span>
-              <span class="ts-meta">{{ num(trendTotals.pax) }} pax</span>
-            </div>
-            <div class="ts-divider" />
-            <div class="ts-item">
-              <span class="ts-label">Belanja / Transaksi</span>
+              <span class="ts-label">Rata-rata / Transaksi</span>
               <span class="ts-value">{{ formatRupiah(trendTotals.basketPerTrx) }}</span>
-              <span class="ts-meta">{{ num(trendTotals.trx) }} trx</span>
+              <span class="ts-meta">{{ num(trendTotals.trx) }} transaksi</span>
             </div>
             <div class="ts-divider" />
             <div class="ts-item">
-              <span class="ts-label">Total Pendapatan</span>
+              <span class="ts-label">Rata-rata / Tamu</span>
+              <span class="ts-value">{{ formatRupiah(trendTotals.basketPerPax) }}</span>
+              <span class="ts-meta">{{ num(trendTotals.pax) }} tamu</span>
+            </div>
+            <div class="ts-divider" />
+            <div class="ts-item">
+              <span class="ts-label">Total Penjualan</span>
               <span class="ts-value">{{ formatRupiah(trendTotals.revenue) }}</span>
-              <span class="ts-meta">{{ (trendTotals.pax > 0 ? (trendTotals.trx / trendTotals.pax).toFixed(1) : '0') }} trx/pax</span>
+              <span class="ts-meta">{{ (trendTotals.pax > 0 ? (trendTotals.pax / trendTotals.trx).toFixed(1) : '0') }} tamu/transaksi</span>
             </div>
           </div>
           <div class="chart-body">
@@ -514,28 +514,22 @@ function sparkOpts(color) {
   }
 }
 
-// ── Perbandingan tren: Pendapatan vs Belanja/Transaksi vs Belanja/Pax ──
-// Skala ketiganya sangat berbeda (pendapatan jutaan, basket puluhan ribu), jadi
-// ditampilkan sebagai INDEKS relatif terhadap rata-rata periode (rata-rata=100).
-// Ketiga garis di satu sumbu → langsung terbandingkan tanpa scroll/hover:
-// garis di atas 100 = di atas rata-rata periode. Nilai rupiah asli ada di tooltip.
-function indexToAvg(arr) {
-  const nz = arr.filter(v => v > 0)
-  const base = nz.length ? nz.reduce((a, b) => a + b, 0) / nz.length : 0
-  return arr.map(v => base > 0 ? Math.round((v / base) * 100) : 0)
-}
+// ── Penjualan + rata-rata belanja (metrik standar F&B) ──────
+// Bar = Penjualan harian (volume, sumbu kiri). Dua garis rupiah nyata (sumbu
+// kanan): Rata-rata/Transaksi (average check) & Rata-rata/Tamu (spend per cover).
+// Keduanya skala mirip (puluhan–ratusan ribu) jadi langsung terbaca & dibanding.
+const kfmt = (v) => v >= 1e6 ? (v / 1e6).toFixed(1) + 'jt' : v >= 1e3 ? Math.round(v / 1e3) + 'rb' : Math.round(v)
 const basketSeries = computed(() => {
   const rev = data.value?.revenue_trend
   if (!rev?.length) return null
   const ord = data.value?.order_trend ?? []
   const px = data.value?.pax_trend ?? []
-  const revVals = rev.map(d => d.value)
-  const btVals = rev.map((d, i) => { const t = ord[i]?.value || 0; return t > 0 ? d.value / t : 0 })
-  const bpVals = rev.map((d, i) => { const p = px[i]?.value || 0; return p > 0 ? d.value / p : 0 })
+  const perTrx = rev.map((d, i) => { const t = ord[i]?.value || 0; return t > 0 ? Math.round(d.value / t) : 0 })
+  const perTamu = rev.map((d, i) => { const p = px[i]?.value || 0; return p > 0 ? Math.round(d.value / p) : 0 })
   return [
-    { name: 'Pendapatan', data: indexToAvg(revVals) },
-    { name: 'Belanja/Transaksi', data: indexToAvg(btVals) },
-    { name: 'Belanja/Pax', data: indexToAvg(bpVals) },
+    { name: 'Penjualan', type: 'column', data: rev.map(d => d.value) },
+    { name: 'Rata-rata/Transaksi', type: 'line', data: perTrx },
+    { name: 'Rata-rata/Tamu', type: 'line', data: perTamu },
   ]
 })
 
@@ -550,41 +544,42 @@ const basketOpts = computed(() => {
       toolbar: { show: false }, zoom: { enabled: false },
       animations: { enabled: true, easing: 'easeinout', speed: 700 },
     },
-    colors: ['#3b82f6', '#8b5cf6', '#10b981'],
-    stroke: { width: 3, curve: 'smooth' },
+    colors: ['#93c5fd', '#8b5cf6', '#10b981'],
+    stroke: { width: [0, 3, 3], curve: 'smooth' },
+    plotOptions: { bar: { columnWidth: '55%', borderRadius: 3, borderRadiusApplication: 'end' } },
+    fill: { opacity: [0.55, 1, 1] },
     markers: { size: 0, hover: { size: 5 } },
     dataLabels: { enabled: false },
     grid: { borderColor: 'rgba(0,0,0,0.05)', strokeDashArray: 4, padding: { left: 4, right: 4 }, xaxis: { lines: { show: false } } },
-    annotations: {
-      yaxis: [{ y: 100, borderColor: '#cbd5e1', strokeDashArray: 4,
-        label: { text: 'rata-rata', style: { color: '#94a3b8', background: 'transparent', fontSize: '10px' }, position: 'left', textAnchor: 'start' } }],
-    },
     xaxis: {
       categories: cats, tickAmount: 7,
       axisBorder: { show: false }, axisTicks: { show: false },
       labels: { rotate: 0, hideOverlappingLabels: true, style: { colors: '#94a3b8', fontSize: '11px' } },
     },
-    yaxis: {
-      labels: { style: { colors: '#94a3b8', fontSize: '11px' }, formatter: (v) => Math.round(v) },
-      title: { text: 'Indeks (rata-rata = 100)', style: { color: '#94a3b8', fontSize: '10px', fontWeight: 600 } },
-    },
+    yaxis: [
+      { seriesName: 'Penjualan', title: { text: 'Penjualan/hari', style: { color: '#94a3b8', fontSize: '10px', fontWeight: 600 } },
+        labels: { style: { colors: '#94a3b8', fontSize: '11px' }, formatter: kfmt } },
+      { seriesName: 'Rata-rata/Transaksi', opposite: true, title: { text: 'Rata-rata belanja', style: { color: '#94a3b8', fontSize: '10px', fontWeight: 600 } },
+        labels: { style: { colors: '#94a3b8', fontSize: '11px' }, formatter: kfmt } },
+      { seriesName: 'Rata-rata/Tamu', opposite: true, show: false, labels: { formatter: kfmt } },
+    ],
     legend: { show: false },
     tooltip: {
       theme: 'dark', shared: true, intersect: false,
       custom: ({ dataPointIndex }) => {
         const i = dataPointIndex
         const r = rev[i]?.value || 0, t = ord[i]?.value || 0, p = px[i]?.value || 0
-        const bp = p > 0 ? Math.round(r / p) : 0, bt = t > 0 ? Math.round(r / t) : 0
+        const bt = t > 0 ? Math.round(r / t) : 0, bp = p > 0 ? Math.round(r / p) : 0
         const row = (c, lbl, val) => `<div style="display:flex;align-items:center;gap:6px;padding:1px 0">
           <span style="width:8px;height:8px;border-radius:2px;background:${c};display:inline-block"></span>
           <span style="color:#cbd5e1;flex:1">${lbl}</span><b style="color:#fff">${val}</b></div>`
-        return `<div style="padding:8px 10px;min-width:180px">
+        return `<div style="padding:8px 10px;min-width:190px">
           <div style="color:#fff;font-weight:700;margin-bottom:4px">${cats[i] || ''}</div>
-          ${row('#3b82f6', 'Pendapatan', formatRupiah(r))}
-          ${row('#8b5cf6', 'Belanja / Transaksi', formatRupiah(bt))}
-          ${row('#10b981', 'Belanja / Tamu', formatRupiah(bp))}
+          ${row('#93c5fd', 'Penjualan', formatRupiah(r))}
+          ${row('#94a3b8', 'Transaksi · Tamu', t + ' bon · ' + p + ' tamu')}
           <div style="border-top:1px solid rgba(255,255,255,.12);margin:4px 0"></div>
-          ${row('#94a3b8', 'Transaksi · Pax', t + ' trx · ' + p + ' tamu')}
+          ${row('#8b5cf6', 'Rata-rata / Transaksi', formatRupiah(bt))}
+          ${row('#10b981', 'Rata-rata / Tamu', formatRupiah(bp))}
         </div>`
       },
     },

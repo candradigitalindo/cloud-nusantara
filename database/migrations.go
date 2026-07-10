@@ -1073,6 +1073,36 @@ func RunMigrations() error {
 		`ALTER TABLE cloud_products ADD COLUMN IF NOT EXISTS stock_type VARCHAR(10) NOT NULL DEFAULT 'none'`,
 		`ALTER TABLE cloud_products ADD COLUMN IF NOT EXISTS linked_stock_item_id CHAR(26) REFERENCES stock_items(id) ON DELETE SET NULL`,
 		`ALTER TABLE cloud_products ADD COLUMN IF NOT EXISTS recipe_master_id CHAR(26) REFERENCES recipe_masters(id) ON DELETE SET NULL`,
+		// Penerimaan Barang (Goods Receipt / GRN) — dokumen stok masuk ke gudang,
+		// opsional merujuk No. Pengadaan. Header + baris; tiap baris juga menghasilkan
+		// satu stock_movement (purchase_in) + batch lewat applyMovement.
+		`CREATE TABLE IF NOT EXISTS goods_receipts (
+			id CHAR(26) PRIMARY KEY,
+			grn_number VARCHAR(30) NOT NULL UNIQUE,
+			warehouse_id CHAR(26) NOT NULL REFERENCES warehouses(id),
+			vendor_name VARCHAR(200) DEFAULT '',
+			po_ref VARCHAR(50) DEFAULT '',
+			purchase_request_id CHAR(26) DEFAULT NULL,
+			notes TEXT DEFAULT '',
+			total_cost DECIMAL(15,2) NOT NULL DEFAULT 0,
+			received_by VARCHAR(100) DEFAULT '',
+			received_at TIMESTAMP NOT NULL DEFAULT (now() AT TIME ZONE 'UTC'),
+			created_at TIMESTAMP NOT NULL DEFAULT (now() AT TIME ZONE 'UTC')
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_goods_receipts_wh ON goods_receipts(warehouse_id, received_at DESC)`,
+		`CREATE TABLE IF NOT EXISTS goods_receipt_items (
+			id CHAR(26) PRIMARY KEY,
+			receipt_id CHAR(26) NOT NULL REFERENCES goods_receipts(id) ON DELETE CASCADE,
+			item_id CHAR(26) NOT NULL REFERENCES stock_items(id),
+			item_name VARCHAR(200) NOT NULL DEFAULT '',
+			qty_base DECIMAL(15,4) NOT NULL,
+			qty_dist DECIMAL(15,4) NOT NULL DEFAULT 0,
+			unit_used VARCHAR(20) DEFAULT '',
+			cost_per_base DECIMAL(15,2) NOT NULL DEFAULT 0,
+			subtotal DECIMAL(15,2) NOT NULL DEFAULT 0,
+			expiry_date DATE
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_goods_receipt_items_receipt ON goods_receipt_items(receipt_id)`,
 	}
 	for _, m := range warehouseMigrations {
 		if _, err := DB.Exec(m); err != nil {
@@ -1480,6 +1510,39 @@ func RunMigrations() error {
 		mrows.Close()
 		for _, r := range managerRoles {
 			DB.Exec("INSERT INTO role_permissions (role, permission) VALUES ($1, 'devices.view') ON CONFLICT DO NOTHING", r)
+		}
+	}
+
+	// ── Meja Titipan (parked check) ─────────────────────────────────────────
+	// Order titipan (is_holding) = barang menggantung yang belum dibayar → harus
+	// dikecualikan dari omzet/belum-lunas. Log titip/tarik (audit) disimpan
+	// append-only untuk pengawasan "kebocoran".
+	titipanMigrations := []string{
+		`ALTER TABLE cloud_orders ADD COLUMN IF NOT EXISTS is_holding BOOLEAN NOT NULL DEFAULT false`,
+		`CREATE TABLE IF NOT EXISTS order_item_titipan_logs (
+			id            BIGSERIAL PRIMARY KEY,
+			outlet_id     CHAR(26) NOT NULL,
+			local_id      VARCHAR(50) NOT NULL,   -- order_items.id
+			action        VARCHAR(10) NOT NULL,   -- 'park' | 'pull'
+			product_name  TEXT    NOT NULL DEFAULT '',
+			qty           NUMERIC NOT NULL DEFAULT 0,
+			price         NUMERIC NOT NULL DEFAULT 0,
+			subtotal      NUMERIC NOT NULL DEFAULT 0,
+			category_id   VARCHAR(50) NOT NULL DEFAULT '',
+			source_table  VARCHAR(50) NOT NULL DEFAULT '',
+			target_table  VARCHAR(50) NOT NULL DEFAULT '',
+			performed_by  TEXT NOT NULL DEFAULT '',
+			performed_at  TIMESTAMP,
+			created_at    TIMESTAMP NOT NULL DEFAULT (now() AT TIME ZONE 'UTC')
+		)`,
+		// Idempoten terhadap retry outbox: satu event (item, aksi, waktu) unik.
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_titipan_event_unique
+			ON order_item_titipan_logs(outlet_id, local_id, action, performed_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_titipan_outlet ON order_item_titipan_logs(outlet_id, performed_at DESC)`,
+	}
+	for _, m := range titipanMigrations {
+		if _, err := DB.Exec(m); err != nil {
+			log.Printf("Titipan migration skipped: %v", err)
 		}
 	}
 

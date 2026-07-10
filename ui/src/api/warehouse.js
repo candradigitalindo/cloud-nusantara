@@ -35,6 +35,13 @@ export const stockLedgerApi = {
   produce: (data) => api.post('/admin/stock-produce', data),
 }
 
+// ── Penerimaan Barang (Goods Receipt / GRN) ───────────────────
+export const goodsReceiptsApi = {
+  list: (params = {}) => api.get('/admin/goods-receipts', { params }),
+  get: (id) => api.get(`/admin/goods-receipts/${id}`),
+  create: (data) => api.post('/admin/goods-receipts', data),
+}
+
 // ── Master Recipe System (F&B) ───────────────────────────
 export const recipeMastersApi = {
   list: (params = {}) => api.get('/admin/recipe-masters', { params }),
