@@ -140,6 +140,11 @@ func Setup(app *fiber.App, cfg *config.Config) {
 	admin.Get("/sales-report", middleware.RequirePermission("reports.sales.view"), handlers.GetSalesReport)
 	admin.Get("/unpaid-orders", middleware.RequirePermission("reports.sales.view"), handlers.GetUnpaidOrders)
 	admin.Get("/cashier-shifts", middleware.RequirePermission("cashier_shifts.view"), handlers.GetCashierShiftReport)
+	// Rekonsiliasi shift (tutup kasir vs cloud). Lihat: cashier_shifts.view.
+	// Penyesuaian data (ikuti versi kasir) = khusus superadmin, tercatat & bisa dibatalkan.
+	admin.Get("/shift-reconciliation", middleware.RequirePermission("cashier_shifts.view"), handlers.GetShiftReconciliation)
+	admin.Post("/shift-reconciliation/:shiftId/apply", middleware.RequireSuperadmin(), handlers.ApplyShiftAdjustment)
+	admin.Post("/shift-reconciliation/adjustments/:id/revert", middleware.RequireSuperadmin(), handlers.RevertShiftAdjustment)
 	admin.Get("/devices", middleware.RequirePermission("devices.view"), handlers.GetDeviceMonitor)
 	admin.Get("/devices/:outletId/history", middleware.RequirePermission("devices.view"), handlers.GetDeviceHistory)
 	admin.Get("/product-sales-report", middleware.RequirePermission("reports.product_sales.view"), handlers.GetProductSalesReport)

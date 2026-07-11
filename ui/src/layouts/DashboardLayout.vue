@@ -380,6 +380,7 @@ const NAV_ITEMS_DATA = [
     children: [
       { to: '/sales-report',         label: 'Pendapatan', permission: 'reports.sales.view' },
       { to: '/cashier-shifts',       label: 'Shift Kasir', permission: 'cashier_shifts.view' },
+      { to: '/shift-reconciliation', label: 'Rekonsiliasi Shift', permission: 'cashier_shifts.view' },
       { to: '/procurement-payments',  label: 'Pembayaran', permission: 'finance.payments.view' },
       { to: '/product-sales-report', label: 'Penjualan Produk', permission: 'reports.product_sales.view' },
       { to: '/general-ledger',       label: 'Buku Besar', permission: 'reports.ledger.view' },

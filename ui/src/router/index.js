@@ -47,6 +47,7 @@ const ProcurementDashboard = () => import('@/pages/outlet/ProcurementDashboard.v
 const ProductsAdmin       = () => import('@/pages/Products.vue')
 const SalesReport         = () => import('@/pages/SalesReport.vue')
 const CashierShiftReport  = () => import('@/pages/CashierShiftReport.vue')
+const ShiftReconciliation = () => import('@/pages/ShiftReconciliation.vue')
 const ProductSalesReport  = () => import('@/pages/ProductSalesReport.vue')
 const Assets              = () => import('@/pages/Assets.vue')
 const Reservations        = () => import('@/pages/Reservations.vue')
@@ -236,6 +237,12 @@ const routes = [
         name: 'CashierShiftReport',
         component: CashierShiftReport,
         meta: { title: 'Laporan Shift Kasir — Cloud POS', requiresAuth: true, permission: 'cashier_shifts.view' },
+      },
+      {
+        path: 'shift-reconciliation',
+        name: 'ShiftReconciliation',
+        component: ShiftReconciliation,
+        meta: { title: 'Rekonsiliasi Shift — Cloud POS', requiresAuth: true, permission: 'cashier_shifts.view' },
       },
       {
         path: 'product-sales-report',

@@ -1546,5 +1546,37 @@ func RunMigrations() error {
 		}
 	}
 
+	// ── Rekonsiliasi shift: penyesuaian pendapatan "ikuti versi kasir" ──────
+	// Catatan tersendiri untuk setiap penyesuaian, agar bisa dikembalikan bila
+	// keliru. Nilai penyesuaian direalisasikan sebagai satu transaksi bertanda
+	// payment_method='adjustment' (mengalir ke semua laporan), yang bisa dihapus
+	// saat revert.
+	reconMigrations := []string{
+		`CREATE TABLE IF NOT EXISTS shift_revenue_adjustments (
+			id                BIGSERIAL PRIMARY KEY,
+			outlet_id         CHAR(26) NOT NULL,
+			shift_id          CHAR(26) NOT NULL,
+			shift_date        DATE,
+			cashier_sales     NUMERIC NOT NULL DEFAULT 0,
+			cloud_sales       NUMERIC NOT NULL DEFAULT 0,
+			adjustment_amount NUMERIC NOT NULL DEFAULT 0,
+			txn_id            CHAR(26),
+			txn_local_id      VARCHAR(60),
+			note              TEXT NOT NULL DEFAULT '',
+			status            VARCHAR(12) NOT NULL DEFAULT 'applied', -- applied | reverted
+			created_by        TEXT NOT NULL DEFAULT '',
+			created_at        TIMESTAMP NOT NULL DEFAULT (now() AT TIME ZONE 'UTC'),
+			reverted_by       TEXT NOT NULL DEFAULT '',
+			reverted_at       TIMESTAMP
+		)`,
+		// Hanya boleh ada satu penyesuaian AKTIF per shift.
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_shift_adj_active ON shift_revenue_adjustments(shift_id) WHERE status='applied'`,
+	}
+	for _, m := range reconMigrations {
+		if _, err := DB.Exec(m); err != nil {
+			log.Printf("Reconciliation migration skipped: %v", err)
+		}
+	}
+
 	return nil
 }
