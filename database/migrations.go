@@ -1578,5 +1578,34 @@ func RunMigrations() error {
 		}
 	}
 
+	// ── CCTV: konfigurasi kamera per outlet (RELAY-ONLY, zero-retention) ─────
+	// Cloud hanya menyimpan CARA menjangkau DVR (host/channel/kredensial RTSP
+	// terenkripsi). TIDAK ada footage/rekaman di cloud — video hanya di-relay
+	// go2rtc dari DVR ke browser. Rekaman tetap 100% di DVR outlet.
+	cctvMigrations := []string{
+		`CREATE TABLE IF NOT EXISTS outlet_cameras (
+			id                CHAR(26) PRIMARY KEY,
+			outlet_id         CHAR(26) NOT NULL REFERENCES outlets(id),
+			name              VARCHAR(100) NOT NULL,
+			brand             VARCHAR(20) NOT NULL DEFAULT 'hikvision',
+			host              VARCHAR(120) NOT NULL,
+			port              INTEGER NOT NULL DEFAULT 554,
+			channel           INTEGER NOT NULL DEFAULT 1,
+			subtype           INTEGER NOT NULL DEFAULT 1,
+			rtsp_username     VARCHAR(80) NOT NULL DEFAULT '',
+			rtsp_password_enc TEXT NOT NULL DEFAULT '',
+			is_active         BOOLEAN NOT NULL DEFAULT true,
+			sort_order        INTEGER NOT NULL DEFAULT 0,
+			created_at        TIMESTAMP DEFAULT (now() AT TIME ZONE 'UTC'),
+			updated_at        TIMESTAMP DEFAULT (now() AT TIME ZONE 'UTC')
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_outlet_cameras_outlet ON outlet_cameras(outlet_id, sort_order)`,
+	}
+	for _, m := range cctvMigrations {
+		if _, err := DB.Exec(m); err != nil {
+			log.Printf("CCTV migration skipped: %v", err)
+		}
+	}
+
 	return nil
 }

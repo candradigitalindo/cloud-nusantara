@@ -89,6 +89,10 @@ func Setup(app *fiber.App, cfg *config.Config) {
 	// jadi didaftarkan di luar grup AdminAuth; validasi token di handler.
 	api.Get("/admin/events", handlers.Events(cfg))
 
+	// CCTV auth subrequest — dipanggil nginx auth_request untuk melindungi relay
+	// /cctv/. Divalidasi via cookie stream token (request media tidak bawa header).
+	api.Get("/cctv/authz", handlers.CCTVAuthz(cfg))
+
 	// Admin API (authenticated by admin token or JWT)
 	admin := api.Group("/admin", middleware.AdminAuth(cfg))
 
@@ -147,6 +151,18 @@ func Setup(app *fiber.App, cfg *config.Config) {
 	admin.Post("/shift-reconciliation/adjustments/:id/revert", middleware.RequireSuperadmin(), handlers.RevertShiftAdjustment)
 	admin.Get("/devices", middleware.RequirePermission("devices.view"), handlers.GetDeviceMonitor)
 	admin.Get("/devices/:outletId/history", middleware.RequirePermission("devices.view"), handlers.GetDeviceHistory)
+
+	// CCTV — monitoring live/putar ulang (view) + kelola kamera (create/update/delete).
+	// Relay-only: cloud tidak menyimpan video; hanya konfigurasi + relay go2rtc.
+	admin.Get("/cameras", middleware.RequirePermission("cameras.view"), handlers.GetCameras)
+	admin.Get("/outlets/:id/cameras", middleware.RequirePermission("cameras.view"), handlers.GetOutletCameras)
+	admin.Post("/outlets/:id/cameras", middleware.RequirePermission("cameras.create"), handlers.CreateCamera)
+	admin.Put("/cameras/:camId", middleware.RequirePermission("cameras.update"), handlers.UpdateCamera)
+	admin.Post("/cameras/:camId/toggle", middleware.RequirePermission("cameras.update"), handlers.ToggleCamera)
+	admin.Delete("/cameras/:camId", middleware.RequirePermission("cameras.delete"), handlers.DeleteCamera)
+	admin.Post("/cameras/:camId/stream", middleware.RequirePermission("cameras.view"), handlers.StartCameraStream(cfg))
+	admin.Post("/cameras/:camId/playback", middleware.RequirePermission("cameras.view"), handlers.StartCameraPlayback(cfg))
+	admin.Post("/cameras/:camId/stop", middleware.RequirePermission("cameras.view"), handlers.StopCameraStream)
 	admin.Get("/product-sales-report", middleware.RequirePermission("reports.product_sales.view"), handlers.GetProductSalesReport)
 	admin.Get("/tax-report", middleware.RequirePermission("reports.tax.view"), handlers.GetTaxReport)
 	admin.Get("/cash-flow-report", middleware.RequirePermission("reports.cashflow.view"), handlers.GetCashFlowReport)

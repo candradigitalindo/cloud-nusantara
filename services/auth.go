@@ -70,6 +70,9 @@ var AllPermissions = []string{
 	"settings.timezone.view", "settings.timezone.update",
 	"settings.tax.view", "settings.tax.update",
 	"devices.view", // Monitoring perangkat (heartbeat tablet kasir)
+
+	// CCTV — lihat live/putar ulang (view) + kelola kamera (create/update/delete)
+	"cameras.view", "cameras.create", "cameras.update", "cameras.delete",
 }
 
 func AdminLogin(req models.AdminLoginRequest, jwtSecret string) (*models.AdminLoginResponse, error) {

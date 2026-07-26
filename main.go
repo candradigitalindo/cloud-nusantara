@@ -4,6 +4,7 @@ import (
 	"cloud-pos/config"
 	"cloud-pos/database"
 	"cloud-pos/routes"
+	"cloud-pos/services"
 	"fmt"
 	"log"
 	"net"
@@ -35,6 +36,10 @@ func main() {
 	if err := database.SeedAdmin(); err != nil {
 		log.Printf("Admin seeder warning: %v", err)
 	}
+
+	// CCTV relay: siapkan kunci enkripsi kredensial RTSP, secret stream token,
+	// dan alamat media server go2rtc.
+	services.InitCCTV(cfg.CameraEncKey, cfg.JWTSecret, cfg.Go2rtcURL)
 
 	app := fiber.New(fiber.Config{
 		AppName:        "Nusantara POS Cloud API v1.0.0",

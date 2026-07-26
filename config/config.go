@@ -20,6 +20,10 @@ type Config struct {
 	WebhookSecret   string
 	RateLimitPerMin int
 	AdminToken      string
+	// CCTV relay (go2rtc). Go2rtcURL = alamat API internal media server.
+	// CameraEncKey = kunci enkripsi kredensial RTSP (opsional; kosong → turunan JWT_SECRET).
+	Go2rtcURL     string
+	CameraEncKey  string
 }
 
 func (c *Config) DSN() string {
@@ -58,6 +62,8 @@ func Load() *Config {
 		WebhookSecret:   getEnv("WEBHOOK_SECRET", "webhook-secret-key"),
 		RateLimitPerMin: rateLimit,
 		AdminToken:      getEnv("ADMIN_TOKEN", "admin-secret-token"),
+		Go2rtcURL:       getEnv("GO2RTC_URL", "http://go2rtc:1984"),
+		CameraEncKey:    getEnv("CAMERA_ENC_KEY", ""),
 	}
 }
 

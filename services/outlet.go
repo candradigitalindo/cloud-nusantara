@@ -200,6 +200,7 @@ func DeleteOutlet(id string) error {
 	}
 
 	relatedTables := []string{
+		"outlet_cameras",
 		"cloud_cash_movements",
 		"cloud_cashier_shifts",
 		"sync_conflicts",
