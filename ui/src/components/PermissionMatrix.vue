@@ -152,7 +152,7 @@ const CATEGORIES = [
     items: [{ type: 'crud', module: 'reservations', label: 'Reservasi', icon: IC.cart }],
   },
   {
-    label: 'Keuangan', icon: IC.finance,
+    label: 'Laporan', icon: IC.finance,
     items: [
       {
         type: 'toggles', label: 'Laporan (per jenis)', icon: IC.report,
@@ -164,11 +164,13 @@ const CATEGORIES = [
           { key: 'reports.pnl.view',           label: 'Profit & Loss' },
           { key: 'reports.balance.view',       label: 'Neraca' },
           { key: 'reports.tax.view',           label: 'Pajak' },
-          { key: 'reports.void.view',          label: 'Void' },
+          { key: 'reports.void.view',          label: 'Void (Transaksi & Item)' },
+          { key: 'reports.titipan.view',       label: 'Titipan' },
           { key: 'reports.discount.view',      label: 'Diskon & Komplimen' },
         ],
       },
       { type: 'single', key: 'cashier_shifts.view', label: 'Laporan Shift Kasir', icon: IC.report },
+      { type: 'single', key: 'shift_reconciliation.view', label: 'Rekonsiliasi Shift', icon: IC.report },
       { type: 'single', key: 'finance.payments.view', label: 'Pembayaran', icon: IC.wallet },
       { type: 'crud', module: 'finance.bank', label: 'Data Rekening', icon: IC.bank },
     ],
@@ -187,6 +189,72 @@ const CATEGORIES = [
         ],
       },
       { type: 'crud', module: 'vendors', label: 'Vendor', icon: IC.vendor },
+    ],
+  },
+  {
+    label: 'PPIC', icon: IC.gauge,
+    items: [
+      { type: 'single', key: 'ppic.dashboard.view', label: 'Dashboard PPIC', icon: IC.gauge },
+      {
+        type: 'toggles', label: 'Par Level & ROP', icon: IC.stockitem,
+        toggles: [
+          { key: 'ppic.planning.view',   label: 'Lihat' },
+          { key: 'ppic.planning.update', label: 'Ubah' },
+        ],
+      },
+      {
+        type: 'toggles', label: 'Monitor Kedaluwarsa', icon: IC.clock,
+        toggles: [
+          { key: 'ppic.expiry.view', label: 'Lihat' },
+          { key: 'ppic.expiry.ack',  label: 'Tandai Ditindak' },
+        ],
+      },
+      {
+        type: 'toggles', label: 'Stock Opname', icon: IC.ledger,
+        toggles: [
+          { key: 'ppic.opname.view',    label: 'Lihat' },
+          { key: 'ppic.opname.create',  label: 'Buat/Hitung' },
+          { key: 'ppic.opname.approve', label: 'Approve' },
+        ],
+      },
+      {
+        type: 'toggles', label: 'Demand Forecast', icon: IC.finance,
+        toggles: [
+          { key: 'ppic.forecast.view',   label: 'Lihat' },
+          { key: 'ppic.forecast.manage', label: 'Generate/Ubah' },
+        ],
+      },
+      {
+        type: 'toggles', label: 'Kebutuhan Bahan (MRP)', icon: IC.cart,
+        toggles: [
+          { key: 'ppic.mrp.view',    label: 'Lihat' },
+          { key: 'ppic.mrp.run',     label: 'Hitung' },
+          { key: 'ppic.mrp.execute', label: 'Buat Draft PR/Transfer' },
+        ],
+      },
+      {
+        type: 'toggles', label: 'Rencana Produksi (MPS)', icon: IC.workunit,
+        toggles: [
+          { key: 'ppic.production.view',    label: 'Lihat' },
+          { key: 'ppic.production.create',  label: 'Buat' },
+          { key: 'ppic.production.approve', label: 'Approve/Release' },
+        ],
+      },
+      {
+        type: 'toggles', label: 'Work Order', icon: IC.recipe,
+        toggles: [
+          { key: 'ppic.workorders.view',    label: 'Lihat' },
+          { key: 'ppic.workorders.create',  label: 'Buat/Batal' },
+          { key: 'ppic.workorders.execute', label: 'Mulai/Selesaikan' },
+        ],
+      },
+      {
+        type: 'toggles', label: 'Laporan PPIC', icon: IC.report,
+        toggles: [
+          { key: 'ppic.reports.view',   label: 'Lihat' },
+          { key: 'ppic.reports.export', label: 'Export Excel' },
+        ],
+      },
     ],
   },
   {

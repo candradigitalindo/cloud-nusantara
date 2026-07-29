@@ -179,12 +179,11 @@
 
               <div class="form-group">
                 <label class="form-label">Halaman Setelah Login</label>
-                <select v-model="form.redirect_to" class="form-select">
-                  <optgroup v-for="g in createRedirectGroups" :key="g.category" :label="g.category">
-                    <option v-for="opt in g.options" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-                  </optgroup>
-                </select>
-                <p class="form-hint">Hanya halaman yang dapat diakses role ini yang ditampilkan.</p>
+                <SearchSelect v-model="form.redirect_to" :options="REDIRECT_SEARCH_OPTIONS" placeholder="Cari halaman tujuan..." />
+                <p v-if="!redirectAllowed(form.permissions, form.redirect_to)" class="form-hint" style="color:#b45309">
+                  ⚠ Role ini belum punya izin untuk halaman tersebut — centang izinnya di Hak Akses di bawah, atau user akan mendarat di halaman "Akses Ditolak".
+                </p>
+                <p v-else class="form-hint">Semua halaman sidebar tersedia — ketik untuk mencari.</p>
               </div>
 
               <!-- Scope -->
@@ -247,11 +246,10 @@
                 <AppInput v-model="editForm.description" label="Deskripsi" placeholder="Deskripsi singkat role" />
                 <div class="form-group">
                   <label class="form-label">Halaman Setelah Login</label>
-                  <select v-model="editForm.redirect_to" class="form-select">
-                    <optgroup v-for="g in editRedirectGroups" :key="g.category" :label="g.category">
-                      <option v-for="opt in g.options" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-                    </optgroup>
-                  </select>
+                  <SearchSelect v-model="editForm.redirect_to" :options="REDIRECT_SEARCH_OPTIONS" placeholder="Cari halaman tujuan..." />
+                  <p v-if="!editForm.isSystem && !redirectAllowed(rolePermissions[editForm.originalName] ?? [], editForm.redirect_to)" class="form-hint" style="color:#b45309">
+                    ⚠ Role ini belum punya izin untuk halaman tersebut — user akan mendarat di halaman "Akses Ditolak".
+                  </p>
                 </div>
               </div>
             </div>
@@ -347,6 +345,7 @@ import { useAuthStore }  from '@/stores/auth.js'
 import AppInput   from '@/components/ui/AppInput.vue'
 import AppAlert   from '@/components/ui/AppAlert.vue'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
+import SearchSelect from '@/components/ui/SearchSelect.vue'
 import PermissionMatrix from '@/components/PermissionMatrix.vue'
 
 const toast     = useToastStore()
@@ -357,21 +356,30 @@ const authStore = useAuthStore()
 // Post-login redirect targets, grouped to mirror the app sidebar. Each option
 // carries the permission required to view that page so the dropdown only offers
 // pages the role can actually land on.
+// Susunan & urutan mengikuti sidebar (DashboardLayout NAV_ITEMS) — setiap
+// kategori minimal memuat submenu PERTAMA-nya sebagai target landing.
 const REDIRECT_GROUPS = [
   { category: 'Umum', options: [
     { value: '/', label: 'Dashboard', perm: 'dashboard' },
   ]},
   { category: 'Master Data', options: [
-    { value: '/outlets',    label: 'Outlet',     perm: 'outlets.view' },
-    { value: '/work-units', label: 'Unit Kerja', perm: 'workunits.view' },
-    { value: '/warehouses', label: 'Gudang',     perm: 'warehouses.view' },
-    { value: '/roles',      label: 'Role & Hak Akses', perm: 'roles.view' },
+    { value: '/outlets',      label: 'Outlet',       perm: 'outlets.view' },
+    { value: '/work-units',   label: 'Unit Kerja',   perm: 'workunits.view' },
+    { value: '/warehouses',   label: 'Gudang',       perm: 'warehouses.view' },
+    { value: '/perlengkapan', label: 'Perlengkapan', perm: 'assets.view' },
+    { value: '/roles',        label: 'Role & Hak Akses', perm: 'roles.view' },
+    { value: '/app-pos',      label: 'App POS',      perm: 'appfiles.view' },
   ]},
   { category: 'Produk', options: [
     { value: '/products', label: 'Produk & Kategori', perm: 'products.view' },
   ]},
-  { category: 'Keuangan', options: [
+  { category: 'Penjualan', options: [
+    { value: '/reservations', label: 'Reservasi', perm: 'reservations.view' },
+  ]},
+  { category: 'Laporan', options: [
     { value: '/sales-report',          label: 'Laporan Pendapatan',       perm: 'reports.sales.view' },
+    { value: '/cashier-shifts',        label: 'Shift Kasir',              perm: 'cashier_shifts.view' },
+    { value: '/shift-reconciliation',  label: 'Rekonsiliasi Shift',       perm: 'shift_reconciliation.view' },
     { value: '/procurement-payments',  label: 'Pembayaran',               perm: 'finance.payments.view' },
     { value: '/product-sales-report',  label: 'Penjualan Produk',         perm: 'reports.product_sales.view' },
     { value: '/general-ledger',        label: 'Buku Besar',               perm: 'reports.ledger.view' },
@@ -379,7 +387,7 @@ const REDIRECT_GROUPS = [
     { value: '/profit-loss-report',    label: 'Profit & Loss',            perm: 'reports.pnl.view' },
     { value: '/balance-report',        label: 'Laporan Neraca',           perm: 'reports.balance.view' },
     { value: '/tax-report',            label: 'Laporan Pajak',            perm: 'reports.tax.view' },
-    { value: '/void-report',           label: 'Laporan Void',             perm: 'reports.void.view' },
+    { value: '/void-report',           label: 'Void & Titipan',           perm: 'reports.void.view' },
     { value: '/discount-report',       label: 'Diskon & Komplimen',       perm: 'reports.discount.view' },
     { value: '/bank-accounts',         label: 'Data Rekening',            perm: 'finance.bank.view' },
   ]},
@@ -389,12 +397,24 @@ const REDIRECT_GROUPS = [
     { value: '/purchase-services',     label: 'Pengadaan Jasa',      perm: 'procurement.requests.view' },
     { value: '/vendors',               label: 'Vendor',              perm: 'vendors.view' },
   ]},
+  { category: 'PPIC', options: [
+    { value: '/ppic/dashboard',        label: 'Dashboard PPIC',        perm: 'ppic.dashboard.view' },
+    { value: '/ppic/planning-params',  label: 'Par Level & ROP',       perm: 'ppic.planning.view' },
+    { value: '/ppic/expiry',           label: 'Monitor Kedaluwarsa',   perm: 'ppic.expiry.view' },
+    { value: '/ppic/opname',           label: 'Stock Opname',          perm: 'ppic.opname.view' },
+    { value: '/ppic/forecast',         label: 'Demand Forecast',       perm: 'ppic.forecast.view' },
+    { value: '/ppic/mrp',              label: 'Kebutuhan Bahan (MRP)', perm: 'ppic.mrp.view' },
+    { value: '/ppic/production-plans', label: 'Rencana Produksi',      perm: 'ppic.production.view' },
+    { value: '/ppic/work-orders',      label: 'Work Order',            perm: 'ppic.workorders.view' },
+    { value: '/ppic/reports',          label: 'Laporan PPIC',          perm: 'ppic.reports.view' },
+  ]},
   { category: 'Pengguna', options: [
     { value: '/admins', label: 'User (Admin)', perm: 'users.view' },
   ]},
   { category: 'Gudang', options: [
     { value: '/warehouse-dashboard', label: 'Dashboard Gudang',     perm: 'warehouse_dashboard.view' },
     { value: '/stock-items',         label: 'Item Stok',            perm: 'stockitems.view' },
+    { value: '/goods-receipts',      label: 'Penerimaan Barang',    perm: 'stockledger.view' },
     { value: '/stock-transfers',     label: 'Transfer Stok',        perm: 'stocktransfers.view' },
     { value: '/stock-wastes',        label: 'Stok Rusak/Hilang',    perm: 'stockwastes.view' },
     { value: '/stock-ledger',        label: 'Buku Stok',            perm: 'stockledger.view' },
@@ -404,9 +424,20 @@ const REDIRECT_GROUPS = [
     { value: '/settings/company',  label: 'Identitas Perusahaan', perm: 'settings.company.view' },
     { value: '/settings/timezone', label: 'Zona Waktu',           perm: 'settings.timezone.view' },
     { value: '/settings/tax',      label: 'Pajak',                perm: 'settings.tax.view' },
+    { value: '/settings/devices',  label: 'Perangkat',            perm: 'devices.view' },
+  ]},
+  { category: 'Log Akses', options: [
+    { value: '/access-logs', label: 'Log Akses', perm: 'access_logs.view' },
   ]},
 ]
 const REDIRECT_OPTIONS = REDIRECT_GROUPS.flatMap(g => g.options)
+
+// Semua halaman sidebar sebagai opsi SearchSelect (bisa dicari), berlabel
+// "Kategori › Halaman". Tidak difilter izin — bila role belum punya izin
+// halaman terpilih, form menampilkan peringatan (bukan menyembunyikan opsi).
+const REDIRECT_SEARCH_OPTIONS = REDIRECT_GROUPS.flatMap(g =>
+  g.options.map(o => ({ id: o.value, name: `${g.category} › ${o.label}` }))
+)
 
 // Does `perms` grant access to a page needing `perm`? Mirrors backend RequirePermission:
 // having any sub-permission of a module implies its `.view`. Dashboard is always allowed.
@@ -421,11 +452,10 @@ function pageAllowed(perms, perm) {
   return false
 }
 
-// Redirect groups filtered to the pages the given permission list can access.
-function redirectGroupsFor(perms) {
-  return REDIRECT_GROUPS
-    .map(g => ({ category: g.category, options: g.options.filter(o => pageAllowed(perms, o.perm)) }))
-    .filter(g => g.options.length > 0)
+// Apakah daftar izin boleh membuka halaman redirect `path`?
+function redirectAllowed(perms, path) {
+  const opt = REDIRECT_OPTIONS.find(o => o.value === path)
+  return pageAllowed(perms, opt?.perm)
 }
 
 // ── State ────────────────────────────────────────────
@@ -462,17 +492,9 @@ const showScopeEdit = ref(false)
 const scopeEditRole = ref('')
 const scopeEditIDs  = ref([])
 
-// Redirect dropdowns: only offer pages the role can actually access.
-const createRedirectGroups = computed(() => redirectGroupsFor(form.permissions))
-const editRedirectGroups = computed(() =>
-  editForm.isSystem ? REDIRECT_GROUPS : redirectGroupsFor(rolePermissions.value[editForm.originalName] ?? [])
-)
-
-// Keep the create-form redirect valid as permissions change.
-watch(() => [...form.permissions], () => {
-  const ok = createRedirectGroups.value.some(g => g.options.some(o => o.value === form.redirect_to))
-  if (!ok) form.redirect_to = '/'
-})
+// Dropdown redirect memuat SEMUA halaman sidebar (REDIRECT_SEARCH_OPTIONS);
+// bila pilihan tidak sesuai izin role, form menampilkan peringatan inline —
+// tidak lagi me-reset paksa ke Dashboard.
 
 // ── Helpers ──────────────────────────────────────────
 

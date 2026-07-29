@@ -372,7 +372,7 @@ const NAV_ITEMS_DATA = [
     ],
   },
   {
-    label: 'Keuangan',
+    label: 'Laporan',
     icon: `<svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6"
         d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
@@ -380,7 +380,7 @@ const NAV_ITEMS_DATA = [
     children: [
       { to: '/sales-report',         label: 'Pendapatan', permission: 'reports.sales.view' },
       { to: '/cashier-shifts',       label: 'Shift Kasir', permission: 'cashier_shifts.view' },
-      { to: '/shift-reconciliation', label: 'Rekonsiliasi Shift', permission: 'cashier_shifts.view' },
+      { to: '/shift-reconciliation', label: 'Rekonsiliasi Shift', permission: 'shift_reconciliation.view' },
       { to: '/procurement-payments',  label: 'Pembayaran', permission: 'finance.payments.view' },
       { to: '/product-sales-report', label: 'Penjualan Produk', permission: 'reports.product_sales.view' },
       { to: '/general-ledger',       label: 'Buku Besar', permission: 'reports.ledger.view' },
@@ -388,7 +388,7 @@ const NAV_ITEMS_DATA = [
       { to: '/profit-loss-report',   label: 'Profit & Loss', permission: 'reports.pnl.view' },
       { to: '/balance-report',       label: 'Laporan Neraca', permission: 'reports.balance.view' },
       { to: '/tax-report',           label: 'Laporan Pajak', permission: 'reports.tax.view' },
-      { to: '/void-report',          label: 'Void & Titipan', permission: 'reports.void.view' },
+      { to: '/void-report',          label: 'Void & Titipan', permission: ['reports.void.view', 'reports.titipan.view'] },
       { to: '/discount-report',      label: 'Diskon & Komplimen', permission: 'reports.discount.view' },
       { to: '/bank-accounts',         label: 'Data Rekening', permission: 'finance.bank.view' },
     ],
@@ -404,6 +404,25 @@ const NAV_ITEMS_DATA = [
       { to: '/purchase-goods', label: 'Barang', permission: 'procurement.requests.view' },
       { to: '/purchase-services', label: 'Jasa', permission: 'procurement.requests.view' },
       { to: '/vendors', label: 'Vendor', permission: 'vendors.view' },
+    ],
+  },
+  {
+    label: 'PPIC',
+    icon: `<svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" d="M8 12l2.5 2.5L15 10" />
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" d="M8 17h5" />
+    </svg>`,
+    children: [
+      { to: '/ppic/dashboard',       label: 'Dashboard', permission: 'ppic.dashboard.view' },
+      { to: '/ppic/planning-params', label: 'Par Level & ROP', permission: 'ppic.planning.view' },
+      { to: '/ppic/expiry',          label: 'Monitor Kedaluwarsa', permission: 'ppic.expiry.view' },
+      { to: '/ppic/opname',          label: 'Stock Opname', permission: 'ppic.opname.view' },
+      { to: '/ppic/forecast',        label: 'Demand Forecast', permission: 'ppic.forecast.view' },
+      { to: '/ppic/mrp',             label: 'Kebutuhan Bahan (MRP)', permission: 'ppic.mrp.view' },
+      { to: '/ppic/production-plans', label: 'Rencana Produksi', permission: 'ppic.production.view' },
+      { to: '/ppic/work-orders',     label: 'Work Order', permission: 'ppic.workorders.view' },
+      { to: '/ppic/reports',         label: 'Laporan PPIC', permission: 'ppic.reports.view' },
     ],
   },
   {

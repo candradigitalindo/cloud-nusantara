@@ -1,8 +1,18 @@
 <template>
   <div class="space-y-5">
-    <div>
-      <h1 class="text-xl font-bold text-gray-900">Laporan Shift Kasir</h1>
-      <p class="text-sm text-gray-500 mt-0.5">Buka, ganti shift, & tutup kasir — beserta analisa balance kas tiap sesi.</p>
+    <div class="flex items-start justify-between gap-3 flex-wrap">
+      <div>
+        <h1 class="text-xl font-bold text-gray-900">Laporan Shift Kasir</h1>
+        <p class="text-sm text-gray-500 mt-0.5">Buka, ganti shift, & tutup kasir — beserta analisa balance kas tiap sesi.</p>
+      </div>
+      <button @click="downloadExcel" :disabled="exporting"
+        class="inline-flex items-center gap-2 px-4 py-2 bg-white border border-emerald-600 text-emerald-700 text-sm font-medium rounded-lg hover:bg-emerald-50 transition-colors shadow-sm disabled:opacity-60 disabled:cursor-not-allowed">
+        <svg v-if="!exporting" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0 0l-4-4m4 4l4-4" />
+        </svg>
+        <AppSpinner v-else size="sm" />
+        {{ exporting ? 'Menyiapkan…' : 'Download Excel' }}
+      </button>
     </div>
 
     <AppAlert type="error" :message="errorMsg" />
@@ -174,6 +184,7 @@ import { formatRupiah } from '@/utils/format.js'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppAlert from '@/components/ui/AppAlert.vue'
 import AppModal from '@/components/ui/AppModal.vue'
+import AppSpinner from '@/components/ui/AppSpinner.vue'
 import SearchSelect from '@/components/ui/SearchSelect.vue'
 import DateRangePicker from '@/components/ui/DateRangePicker.vue'
 import { useRealtime } from '@/utils/realtime.js'
@@ -234,6 +245,42 @@ async function load(silent = false) {
     report.value = d?.data ?? d
   } catch (e) { if (silent !== true) errorMsg.value = e?.message || 'Gagal memuat laporan' } finally { loading.value = false }
 }
+// Download Excel mengikuti filter aktif (outlet + status + tanggal); scope role
+// tetap dipaksakan di server, jadi user hanya menerima data outlet miliknya.
+const exporting = ref(false)
+async function downloadExcel() {
+  if (exporting.value) return
+  exporting.value = true
+  errorMsg.value = ''
+  try {
+    const blob = await cashierShiftsApi.exportReport({
+      outlet_id: filterOutlet.value || undefined,
+      status: filterStatus.value || undefined,
+      date_from: dateFrom.value || undefined,
+      date_to: dateTo.value || undefined,
+    })
+
+    const outletLabel = filterOutlet.value
+      ? (outlets.value.find(o => o.id === filterOutlet.value)?.name || 'Outlet')
+      : 'Semua-Outlet'
+    const slug = outletLabel.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'Outlet'
+    const filename = `Laporan-Shift-Kasir_${slug}_${dateFrom.value || 'awal'}_sd_${dateTo.value || 'akhir'}.xlsx`
+
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  } catch {
+    errorMsg.value = 'Gagal mengunduh Excel. Coba lagi, atau persempit rentang tanggal.'
+  } finally {
+    exporting.value = false
+  }
+}
+
 async function loadOutlets() {
   try { const d = await outletsApi.myOutlets(); outlets.value = d?.outlets ?? d ?? [] } catch { outlets.value = [] }
 }

@@ -1,34 +1,37 @@
 <!--
   AppPagination.vue — Numbered pagination bar
   ───────────────────────────────────────────────────────────────
-  Props:
-    modelValue  : number   — current page (1-based)
-    total       : number   — total items
-    perPage     : number   — items per page              default 20
+  Mendukung DUA gaya pemakaian (banyak halaman memakai gaya kedua,
+  yang dulu diam-diam tidak me-render apa pun):
 
-  Emits:
-    update:modelValue  — new page number
+  Gaya A (v-model + total item):
+    <AppPagination v-model="page" :total="total" :perPage="20" />
 
-  Usage:
-    <AppPagination v-model="page" :total="total" :perPage="perPage" />
+  Gaya B (page + totalPages):
+    <AppPagination :page="page" :total-pages="totalPages" @change="goPage" />
+    <AppPagination :page="page" :totalPages="totalPages" @update:page="goPage" />
+    <AppPagination v-model:page="page" :total-pages="totalPages" />
 
-  AI NOTE: This component does NOT fetch data — the parent page is responsible for
-  watching `page` and calling the API.
+  Emits: update:modelValue, update:page, change — semuanya dipancarkan
+  bersamaan saat pindah halaman, parent bebas dengarkan yang mana.
+
+  AI NOTE: This component does NOT fetch data — the parent page is responsible
+  for reacting to the emitted page number and calling the API.
 -->
 <template>
-  <div v-if="totalPages > 1" class="flex items-center justify-between text-sm text-gray-600 mt-4">
+  <div v-if="pageCount > 1" class="flex items-center justify-between text-sm text-gray-600 mt-4">
     <!-- Info -->
     <span>
-      Halaman {{ modelValue }} dari {{ totalPages }}
-      <span class="text-gray-400">({{ total }} data)</span>
+      Halaman {{ current }} dari {{ pageCount }}
+      <span v-if="total > 0" class="text-gray-400">({{ total }} data)</span>
     </span>
 
     <!-- Buttons -->
     <div class="flex items-center gap-1">
       <button
-        :disabled="modelValue <= 1"
+        :disabled="current <= 1"
         class="px-3 py-1.5 rounded-lg border border-gray-300 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-        @click="go(modelValue - 1)"
+        @click="go(current - 1)"
       >
         ‹ Prev
       </button>
@@ -38,7 +41,7 @@
         :key="p"
         :class="[
           'w-9 h-8 rounded-lg border transition-colors',
-          p === modelValue
+          p === current
             ? 'bg-brand-600 border-brand-600 text-white font-semibold'
             : 'border-gray-300 hover:bg-gray-50',
         ]"
@@ -48,9 +51,9 @@
       </button>
 
       <button
-        :disabled="modelValue >= totalPages"
+        :disabled="current >= pageCount"
         class="px-3 py-1.5 rounded-lg border border-gray-300 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-        @click="go(modelValue + 1)"
+        @click="go(current + 1)"
       >
         Next ›
       </button>
@@ -62,19 +65,28 @@
 import { computed } from 'vue'
 
 const props = defineProps({
-  modelValue: { type: Number, required: true },
+  // Gaya A
+  modelValue: { type: Number, default: 0 },
   total:      { type: Number, default: 0 },
   perPage:    { type: Number, default: 20 },
+  // Gaya B
+  page:       { type: Number, default: 0 },
+  totalPages: { type: Number, default: 0 },
 })
 
-const emit = defineEmits(['update:modelValue'])
+const emit = defineEmits(['update:modelValue', 'update:page', 'change'])
 
-const totalPages = computed(() => Math.max(1, Math.ceil(props.total / props.perPage)))
+const current = computed(() => props.modelValue || props.page || 1)
+
+const pageCount = computed(() => {
+  if (props.totalPages > 0) return props.totalPages
+  return Math.max(1, Math.ceil(props.total / props.perPage))
+})
 
 /** Show at most 7 page buttons centred around current page */
 const visiblePages = computed(() => {
-  const cur   = props.modelValue
-  const total = totalPages.value
+  const cur   = current.value
+  const total = pageCount.value
   const window = 3
   const start = Math.max(1, cur - window)
   const end   = Math.min(total, cur + window)
@@ -84,6 +96,10 @@ const visiblePages = computed(() => {
 })
 
 function go(p) {
-  if (p >= 1 && p <= totalPages.value) emit('update:modelValue', p)
+  if (p >= 1 && p <= pageCount.value && p !== current.value) {
+    emit('update:modelValue', p)
+    emit('update:page', p)
+    emit('change', p)
+  }
 }
 </script>

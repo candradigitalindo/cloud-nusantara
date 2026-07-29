@@ -1,5 +1,5 @@
 <!--
-  ShiftReconciliation.vue — Keuangan > Rekonsiliasi Shift
+  ShiftReconciliation.vue — Laporan > Rekonsiliasi Shift
   Bandingkan penjualan versi kasir (tutup shift di tablet) dengan yang masuk cloud.
   Superadmin bisa "ikuti versi kasir" (tambah penyesuaian) — tercatat & bisa dibatalkan.
 -->

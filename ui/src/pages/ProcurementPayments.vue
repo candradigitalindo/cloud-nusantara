@@ -96,6 +96,14 @@
           class="px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors shadow-sm">
           Tampilkan
         </button>
+        <button @click="downloadExcel" :disabled="exporting"
+          class="inline-flex items-center gap-2 px-4 py-2 bg-white border border-emerald-600 text-emerald-700 text-sm font-medium rounded-lg hover:bg-emerald-50 transition-colors shadow-sm disabled:opacity-60 disabled:cursor-not-allowed">
+          <svg v-if="!exporting" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0 0l-4-4m4 4l4-4" />
+          </svg>
+          <svg v-else class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+          {{ exporting ? 'Menyiapkan…' : 'Download Excel' }}
+        </button>
       </div>
     </AppCard>
 
@@ -763,6 +771,40 @@ async function fetchList() {
 }
 
 function goPage(p) { page.value = p; clearSelection(); fetchList() }
+
+// Download Excel mengikuti filter aktif (status + tipe + kata kunci); scope
+// role tetap dipaksakan di server, jadi user hanya menerima data miliknya.
+const exporting = ref(false)
+async function downloadExcel() {
+  if (exporting.value) return
+  exporting.value = true
+  errorMsg.value = ''
+  try {
+    const params = {}
+    if (filterStatus.value) params.status = filterStatus.value
+    if (filterType.value) params.type = filterType.value
+    if (searchQuery.value.trim()) params.search = searchQuery.value.trim()
+    const blob = await purchaseApi.exportPayments(params)
+
+    const statusLabel = statusFilterOptions.find(o => o.value === filterStatus.value)?.label || 'Semua'
+    const slug = (filterStatus.value ? statusLabel : 'Semua-Status').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+    const today = new Date().toLocaleDateString('en-CA')
+    const filename = `Laporan-Pembayaran-Pengadaan_${slug}_${today}.xlsx`
+
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  } catch {
+    errorMsg.value = 'Gagal mengunduh Excel. Coba lagi, atau persempit filter.'
+  } finally {
+    exporting.value = false
+  }
+}
 
 async function viewDetail(row) {
   try {

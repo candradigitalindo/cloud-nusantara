@@ -41,6 +41,9 @@ func main() {
 	// dan alamat media server go2rtc.
 	services.InitCCTV(cfg.CameraEncKey, cfg.JWTSecret, cfg.Go2rtcURL)
 
+	// PPIC: evaluasi alert harian (expired/ROP) + broadcast SSE ke dashboard.
+	services.StartPpicScheduler()
+
 	app := fiber.New(fiber.Config{
 		AppName:        "Nusantara POS Cloud API v1.0.0",
 		BodyLimit:      200 * 1024 * 1024,

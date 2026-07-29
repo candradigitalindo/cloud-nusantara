@@ -32,7 +32,7 @@ var AllPermissions = []string{
 	// Penjualan
 	"reservations.view", "reservations.create", "reservations.update", "reservations.delete",
 
-	// Keuangan — laporan (view-only) + finance
+	// Laporan (view-only) + finance
 	"reports.sales.view",
 	"reports.product_sales.view",
 	"reports.ledger.view",
@@ -41,8 +41,12 @@ var AllPermissions = []string{
 	"reports.balance.view",
 	"reports.tax.view",
 	"reports.void.view",
+	// Titipan dipisah dari void: halaman sama (tab), izin berbeda.
+	"reports.titipan.view",
 	"reports.discount.view",
 	"cashier_shifts.view",
+	// Rekonsiliasi shift dipisah dari laporan shift kasir.
+	"shift_reconciliation.view",
 	"finance.payments.view",
 	"finance.bank.view", "finance.bank.create", "finance.bank.update", "finance.bank.delete",
 
@@ -64,6 +68,19 @@ var AllPermissions = []string{
 	"stockwastes.view", "stockwastes.create",
 	"stockledger.view", "stockledger.adjust",
 	"recipes.view", "recipes.create", "recipes.update", "recipes.delete",
+
+	// PPIC — Fase 1: pengendalian (dashboard, par level/ROP, kedaluwarsa, opname)
+	"ppic.dashboard.view",
+	"ppic.planning.view", "ppic.planning.update",
+	"ppic.expiry.view", "ppic.expiry.ack",
+	"ppic.opname.view", "ppic.opname.create", "ppic.opname.approve",
+	// PPIC — Fase 2: perencanaan (demand forecast + MRP)
+	"ppic.forecast.view", "ppic.forecast.manage",
+	"ppic.mrp.view", "ppic.mrp.run", "ppic.mrp.execute",
+	// PPIC — Fase 3: produksi (MPS + work order) & laporan
+	"ppic.production.view", "ppic.production.create", "ppic.production.approve",
+	"ppic.workorders.view", "ppic.workorders.create", "ppic.workorders.execute",
+	"ppic.reports.view", "ppic.reports.export",
 
 	// Pengaturan
 	"settings.company.view", "settings.company.update",

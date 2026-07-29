@@ -22,6 +22,14 @@
           class="px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors shadow-sm">
           Tampilkan
         </button>
+        <button @click="downloadExcel" :disabled="exporting"
+          class="inline-flex items-center gap-2 px-4 py-2 bg-white border border-emerald-600 text-emerald-700 text-sm font-medium rounded-lg hover:bg-emerald-50 transition-colors shadow-sm disabled:opacity-60 disabled:cursor-not-allowed">
+          <svg v-if="!exporting" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0 0l-4-4m4 4l4-4" />
+          </svg>
+          <AppSpinner v-else size="sm" />
+          {{ exporting ? 'Menyiapkan…' : 'Download Excel' }}
+        </button>
       </div>
     </AppCard>
 
@@ -153,6 +161,43 @@ async function fetchReport() {
     errorMsg.value = err?.message ?? 'Gagal memuat laporan diskon & komplimen'
   } finally {
     loading.value = false
+  }
+}
+
+// Download Excel mengikuti filter aktif (tanggal + outlet); scope role
+// tetap dipaksakan di server, jadi user hanya menerima data outlet miliknya.
+const exporting = ref(false)
+async function downloadExcel() {
+  if (exporting.value) return
+  exporting.value = true
+  errorMsg.value = ''
+  try {
+    const params = { date_from: dateFrom.value, date_to: dateTo.value }
+    if (selectedOutlet.value) params.outlet_id = selectedOutlet.value
+    const blob = await apiClient.get('/admin/discount-report/export', {
+      params,
+      responseType: 'blob',
+      timeout: 120000,
+    })
+
+    const outletLabel = selectedOutlet.value
+      ? (outletOptions.value.find(o => o.value === selectedOutlet.value)?.label || 'Outlet')
+      : 'Semua-Outlet'
+    const slug = outletLabel.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'Outlet'
+    const filename = `Laporan-Diskon_${slug}_${dateFrom.value}_sd_${dateTo.value}.xlsx`
+
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  } catch {
+    errorMsg.value = 'Gagal mengunduh Excel. Coba lagi, atau persempit rentang tanggal.'
+  } finally {
+    exporting.value = false
   }
 }
 

@@ -23,6 +23,14 @@
           class="px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors shadow-sm">
           Tampilkan
         </button>
+        <button v-if="canVoid" @click="downloadExcel" :disabled="exporting"
+          class="inline-flex items-center gap-2 px-4 py-2 bg-white border border-emerald-600 text-emerald-700 text-sm font-medium rounded-lg hover:bg-emerald-50 transition-colors shadow-sm disabled:opacity-60 disabled:cursor-not-allowed">
+          <svg v-if="!exporting" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0 0l-4-4m4 4l4-4" />
+          </svg>
+          <AppSpinner v-else size="sm" />
+          {{ exporting ? 'Menyiapkan…' : 'Download Excel' }}
+        </button>
       </div>
     </AppCard>
 
@@ -32,10 +40,10 @@
       <AppSpinner size="lg" />
     </div>
 
-    <template v-if="!loading && report">
+    <template v-if="!loading && (report || titipan)">
 
-      <!-- Summary Cards -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <!-- Summary Cards (khusus data void) -->
+      <div v-if="canVoid && report" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <AppCard>
           <div class="flex items-center gap-3">
             <div class="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center">
@@ -84,19 +92,19 @@
 
       <!-- Tab: Void Transaksi vs Void Item -->
       <div class="flex gap-2">
-        <button
+        <button v-if="canVoid"
           class="px-4 py-2 text-sm font-medium rounded-lg transition-colors"
           :class="activeTab === 'order' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'"
           @click="switchTab('order')">
-          Void Transaksi ({{ report.total }})
+          Void Transaksi ({{ report?.total ?? 0 }})
         </button>
-        <button
+        <button v-if="canVoid"
           class="px-4 py-2 text-sm font-medium rounded-lg transition-colors"
           :class="activeTab === 'item' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'"
           @click="switchTab('item')">
-          Void Item ({{ report.items_total }})
+          Void Item ({{ report?.items_total ?? 0 }})
         </button>
-        <button
+        <button v-if="canTitipan"
           class="px-4 py-2 text-sm font-medium rounded-lg transition-colors"
           :class="activeTab === 'titipan' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'"
           @click="switchTab('titipan')">
@@ -105,7 +113,7 @@
       </div>
 
       <!-- Table: Void Transaksi -->
-      <AppCard v-if="activeTab === 'order'">
+      <AppCard v-if="activeTab === 'order' && report">
         <div v-if="report.data.length === 0" class="text-center py-12 text-gray-400">
           <svg class="w-12 h-12 mx-auto mb-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
           <p class="font-medium">Tidak ada order void pada periode ini</p>
@@ -182,7 +190,7 @@
       </AppCard>
 
       <!-- Table: Void Item (hapus item dari order belum bayar) -->
-      <AppCard v-if="activeTab === 'item'">
+      <AppCard v-if="activeTab === 'item' && report">
         <div v-if="report.items.length === 0" class="text-center py-12 text-gray-400">
           <svg class="w-12 h-12 mx-auto mb-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
           <p class="font-medium">Tidak ada void item pada periode ini</p>
@@ -337,6 +345,7 @@
 import { ref, onMounted, watch } from 'vue'
 import { apiClient } from '@/api/client.js'
 import { outletsApi } from '@/api/outlets.js'
+import { useAuthStore } from '@/stores/auth.js'
 import AppCard    from '@/components/ui/AppCard.vue'
 import AppAlert   from '@/components/ui/AppAlert.vue'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
@@ -355,7 +364,14 @@ const titipan       = ref(null)
 const loading       = ref(false)
 const errorMsg      = ref('')
 const page          = ref(1)
-const activeTab     = ref('order') // 'order' = void transaksi, 'item' = void item, 'titipan' = meja titipan
+
+// Izin per tab: Void (transaksi & item) dan Titipan dipisah — role bisa punya
+// salah satu saja. Halaman bisa dibuka bila punya minimal satu izin (router).
+const auth = useAuthStore()
+const canVoid    = auth.hasPermission('reports.void.view')
+const canTitipan = auth.hasPermission('reports.titipan.view')
+
+const activeTab     = ref(canVoid ? 'order' : 'titipan') // 'order' = void transaksi, 'item' = void item, 'titipan' = meja titipan
 
 function switchTab(tab) {
   if (activeTab.value === tab) return
@@ -376,7 +392,7 @@ onMounted(async () => {
       ...list.map(o => ({ value: o.id, label: o.name })),
     ]
   } catch {}
-  fetchReport()
+  canVoid ? fetchReport() : fetchTitipan()
 })
 
 async function fetchReport() {
@@ -417,6 +433,44 @@ async function fetchTitipan() {
 
 function parseItems(raw) {
   try { return JSON.parse(raw) ?? [] } catch { return [] }
+}
+
+// Download Excel void transaksi + void item, mengikuti filter aktif (tanggal +
+// outlet). Titipan tidak ikut (permission terpisah). Scope role tetap
+// dipaksakan di server.
+const exporting = ref(false)
+async function downloadExcel() {
+  if (exporting.value) return
+  exporting.value = true
+  errorMsg.value = ''
+  try {
+    const params = { date_from: dateFrom.value, date_to: dateTo.value }
+    if (selectedOutlet.value) params.outlet_id = selectedOutlet.value
+    const blob = await apiClient.get('/admin/void-report/export', {
+      params,
+      responseType: 'blob',
+      timeout: 120000,
+    })
+
+    const outletLabel = selectedOutlet.value
+      ? (outletOptions.value.find(o => o.value === selectedOutlet.value)?.label || 'Outlet')
+      : 'Semua-Outlet'
+    const slug = outletLabel.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'Outlet'
+    const filename = `Laporan-Void_${slug}_${dateFrom.value}_sd_${dateTo.value}.xlsx`
+
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  } catch {
+    errorMsg.value = 'Gagal mengunduh Excel. Coba lagi, atau persempit rentang tanggal.'
+  } finally {
+    exporting.value = false
+  }
 }
 
 function formatRupiah(val) {

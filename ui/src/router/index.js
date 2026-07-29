@@ -86,6 +86,15 @@ const StockTransfers      = () => import('@/pages/StockTransfers.vue')
 const StockLedger         = () => import('@/pages/StockLedger.vue')
 const GoodsReceipt        = () => import('@/pages/GoodsReceipt.vue')
 const Recipes             = () => import('@/pages/Recipes.vue')
+const PpicDashboard       = () => import('@/pages/ppic/PpicDashboard.vue')
+const PlanningParams      = () => import('@/pages/ppic/PlanningParams.vue')
+const ExpiryMonitor       = () => import('@/pages/ppic/ExpiryMonitor.vue')
+const StockOpname         = () => import('@/pages/ppic/StockOpname.vue')
+const DemandForecast      = () => import('@/pages/ppic/DemandForecast.vue')
+const MrpWorksheet        = () => import('@/pages/ppic/MrpWorksheet.vue')
+const ProductionPlans     = () => import('@/pages/ppic/ProductionPlans.vue')
+const WorkOrders          = () => import('@/pages/ppic/WorkOrders.vue')
+const PpicReports         = () => import('@/pages/ppic/PpicReports.vue')
 const DashboardLayout = () => import('@/layouts/DashboardLayout.vue')
 const AuthLayout     = () => import('@/layouts/AuthLayout.vue')
 
@@ -242,7 +251,7 @@ const routes = [
         path: 'shift-reconciliation',
         name: 'ShiftReconciliation',
         component: ShiftReconciliation,
-        meta: { title: 'Rekonsiliasi Shift — Cloud POS', requiresAuth: true, permission: 'cashier_shifts.view' },
+        meta: { title: 'Rekonsiliasi Shift — Cloud POS', requiresAuth: true, permission: 'shift_reconciliation.view' },
       },
       {
         path: 'product-sales-report',
@@ -284,7 +293,7 @@ const routes = [
         path: 'void-report',
         name: 'VoidReport',
         component: VoidReport,
-        meta: { title: 'Void & Titipan — Cloud POS', requiresAuth: true, permission: 'reports.void.view' },
+        meta: { title: 'Void & Titipan — Cloud POS', requiresAuth: true, permission: ['reports.void.view', 'reports.titipan.view'] },
       },
       {
         path: 'discount-report',
@@ -363,6 +372,61 @@ const routes = [
         name: 'DeviceMonitor',
         component: DeviceMonitor,
         meta: { title: 'Perangkat — Cloud POS', requiresAuth: true, permission: 'devices.view' },
+      },
+      // ── PPIC ────────────────────────────────────────────
+      {
+        path: 'ppic/dashboard',
+        name: 'PpicDashboard',
+        component: PpicDashboard,
+        meta: { title: 'Dashboard PPIC — Cloud POS', requiresAuth: true, permission: 'ppic.dashboard.view' },
+      },
+      {
+        path: 'ppic/planning-params',
+        name: 'PlanningParams',
+        component: PlanningParams,
+        meta: { title: 'Par Level & ROP — Cloud POS', requiresAuth: true, permission: 'ppic.planning.view' },
+      },
+      {
+        path: 'ppic/expiry',
+        name: 'ExpiryMonitor',
+        component: ExpiryMonitor,
+        meta: { title: 'Monitor Kedaluwarsa — Cloud POS', requiresAuth: true, permission: 'ppic.expiry.view' },
+      },
+      {
+        path: 'ppic/opname',
+        name: 'StockOpname',
+        component: StockOpname,
+        meta: { title: 'Stock Opname — Cloud POS', requiresAuth: true, permission: 'ppic.opname.view' },
+      },
+      {
+        path: 'ppic/forecast',
+        name: 'DemandForecast',
+        component: DemandForecast,
+        meta: { title: 'Demand Forecast — Cloud POS', requiresAuth: true, permission: 'ppic.forecast.view' },
+      },
+      {
+        path: 'ppic/mrp',
+        name: 'MrpWorksheet',
+        component: MrpWorksheet,
+        meta: { title: 'Kebutuhan Bahan (MRP) — Cloud POS', requiresAuth: true, permission: 'ppic.mrp.view' },
+      },
+      {
+        path: 'ppic/production-plans',
+        name: 'ProductionPlans',
+        component: ProductionPlans,
+        meta: { title: 'Rencana Produksi — Cloud POS', requiresAuth: true, permission: 'ppic.production.view' },
+      },
+      {
+        path: 'ppic/work-orders',
+        name: 'WorkOrders',
+        component: WorkOrders,
+        meta: { title: 'Work Order — Cloud POS', requiresAuth: true, permission: 'ppic.workorders.view' },
+      },
+      {
+        path: 'ppic/reports',
+        name: 'PpicReports',
+        component: PpicReports,
+        meta: { title: 'Laporan PPIC — Cloud POS', requiresAuth: true, permission: 'ppic.reports.view' },
       },
       // ── Warehouse / Gudang ──────────────────────────────
       {

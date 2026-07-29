@@ -48,6 +48,9 @@ export const useAuthStore = defineStore('auth', () => {
   const isSuperadmin = computed(() => admin.value?.role === 'superadmin')
 
   function hasPermission(perm) {
+    // Bentuk array = lolos bila punya SALAH SATU izin (halaman multi-tab
+    // seperti Void & Titipan yang tiap tab-nya punya izin sendiri).
+    if (Array.isArray(perm)) return perm.some(p => hasPermission(p))
     if (permissions.value.includes(perm)) return true
     // .manage (legacy) → true if user has any CRUD perm (.create/.update/.delete) for the module
     if (perm.endsWith('.manage')) {

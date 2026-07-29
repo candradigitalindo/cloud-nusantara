@@ -1287,7 +1287,8 @@ func RunMigrations() error {
 		"reservations.view", "reservations.create", "reservations.update", "reservations.delete",
 		"reports.sales.view", "reports.product_sales.view", "reports.ledger.view",
 		"reports.cashflow.view", "reports.pnl.view", "reports.balance.view",
-		"reports.tax.view", "reports.void.view", "reports.discount.view", "cashier_shifts.view",
+		"reports.tax.view", "reports.void.view", "reports.titipan.view", "reports.discount.view",
+		"cashier_shifts.view", "shift_reconciliation.view",
 		"finance.payments.view", "finance.bank.view", "finance.bank.create", "finance.bank.update", "finance.bank.delete",
 		"procurement.dashboard.view", "procurement.requests.view", "procurement.requests.submit",
 		"procurement.requests.approve", "procurement.requests.purchasing",
@@ -1605,6 +1606,273 @@ func RunMigrations() error {
 		if _, err := DB.Exec(m); err != nil {
 			log.Printf("CCTV migration skipped: %v", err)
 		}
+	}
+
+	// ── PPIC Fase 1: par level/ROP, monitor kedaluwarsa, stock opname ────────
+	// Parameter perencanaan per item-gudang + sesi opname (snapshot blind count).
+	// Batch mendapat kolom "ack" supaya alert kedaluwarsa bisa disenyapkan
+	// setelah ditindak tanpa menghapus jejak batch-nya.
+	ppicMigrations := []string{
+		`CREATE TABLE IF NOT EXISTS item_planning_params (
+			item_id CHAR(26) NOT NULL REFERENCES stock_items(id) ON DELETE CASCADE,
+			warehouse_id CHAR(26) NOT NULL REFERENCES warehouses(id) ON DELETE CASCADE,
+			lead_time_days INTEGER NOT NULL DEFAULT 0,
+			safety_stock DECIMAL(15,4) NOT NULL DEFAULT 0,
+			reorder_point DECIMAL(15,4) NOT NULL DEFAULT 0,
+			par_level DECIMAL(15,4) NOT NULL DEFAULT 0,
+			moq DECIMAL(15,4) NOT NULL DEFAULT 0,
+			updated_by VARCHAR(100) DEFAULT '',
+			updated_at TIMESTAMP DEFAULT (now() AT TIME ZONE 'UTC'),
+			PRIMARY KEY (item_id, warehouse_id)
+		)`,
+		`ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS shelf_life_days INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS default_lead_time_days INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE stock_item_categories ADD COLUMN IF NOT EXISTS is_perishable BOOLEAN NOT NULL DEFAULT false`,
+		`ALTER TABLE stock_batches ADD COLUMN IF NOT EXISTS ppic_ack_at TIMESTAMP`,
+		`ALTER TABLE stock_batches ADD COLUMN IF NOT EXISTS ppic_ack_by VARCHAR(100) DEFAULT ''`,
+		`ALTER TABLE stock_batches ADD COLUMN IF NOT EXISTS ppic_ack_note TEXT DEFAULT ''`,
+		`CREATE INDEX IF NOT EXISTS idx_stock_batches_expiry ON stock_batches(expiry_date) WHERE expiry_date IS NOT NULL`,
+		`CREATE TABLE IF NOT EXISTS stock_opnames (
+			id CHAR(26) PRIMARY KEY,
+			opname_number VARCHAR(30) NOT NULL UNIQUE,
+			warehouse_id CHAR(26) NOT NULL REFERENCES warehouses(id),
+			category VARCHAR(100) DEFAULT '',
+			status VARCHAR(12) NOT NULL DEFAULT 'counting',
+			notes TEXT DEFAULT '',
+			created_by VARCHAR(100) DEFAULT '',
+			approved_by VARCHAR(100) DEFAULT '',
+			approved_at TIMESTAMP,
+			created_at TIMESTAMP DEFAULT (now() AT TIME ZONE 'UTC'),
+			updated_at TIMESTAMP DEFAULT (now() AT TIME ZONE 'UTC')
+		)`,
+		`CREATE TABLE IF NOT EXISTS stock_opname_items (
+			id CHAR(26) PRIMARY KEY,
+			opname_id CHAR(26) NOT NULL REFERENCES stock_opnames(id) ON DELETE CASCADE,
+			item_id CHAR(26) NOT NULL REFERENCES stock_items(id),
+			qty_system_base DECIMAL(15,4) NOT NULL DEFAULT 0,
+			qty_counted_base DECIMAL(15,4),
+			cost_per_base DECIMAL(15,2) NOT NULL DEFAULT 0,
+			reason TEXT DEFAULT '',
+			UNIQUE(opname_id, item_id)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_stock_opnames_wh ON stock_opnames(warehouse_id, created_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_stock_movements_wh_created ON stock_movements(warehouse_id, created_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_stock_movements_item_wh_created ON stock_movements(item_id, warehouse_id, created_at)`,
+	}
+	for _, m := range ppicMigrations {
+		if _, err := DB.Exec(m); err != nil {
+			log.Printf("PPIC migration skipped: %v", err)
+		}
+	}
+
+	// ── PPIC Fase 2: demand forecast + snapshot MRP ──────────────────────────
+	// Forecast per (outlet, NAMA produk, tanggal) — produk dikenali per nama,
+	// konsisten dengan laporan Penjualan Produk (payload order tidak selalu
+	// membawa product_id). Hasil kalkulasi MRP disimpan sebagai snapshot agar
+	// keputusan beli/transfer bisa diaudit; PR/transfer hasil MRP diberi jejak
+	// origin + mrp_run_id.
+	ppic2Migrations := []string{
+		`CREATE TABLE IF NOT EXISTS demand_forecasts (
+			id CHAR(26) PRIMARY KEY,
+			outlet_id CHAR(26) NOT NULL REFERENCES outlets(id) ON DELETE CASCADE,
+			product_name VARCHAR(200) NOT NULL,
+			forecast_date DATE NOT NULL,
+			qty_system DECIMAL(15,4) NOT NULL DEFAULT 0,
+			qty_manual DECIMAL(15,4),
+			qty_actual DECIMAL(15,4),
+			method VARCHAR(20) NOT NULL DEFAULT 'wma_dow',
+			event_note TEXT DEFAULT '',
+			updated_by VARCHAR(100) DEFAULT '',
+			updated_at TIMESTAMP DEFAULT (now() AT TIME ZONE 'UTC'),
+			UNIQUE(outlet_id, product_name, forecast_date)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_demand_forecasts_date ON demand_forecasts(forecast_date)`,
+		`CREATE TABLE IF NOT EXISTS mrp_runs (
+			id CHAR(26) PRIMARY KEY,
+			run_number VARCHAR(30) NOT NULL UNIQUE,
+			warehouse_id CHAR(26) NOT NULL REFERENCES warehouses(id),
+			horizon_days INTEGER NOT NULL DEFAULT 7,
+			include_par BOOLEAN NOT NULL DEFAULT true,
+			status VARCHAR(12) NOT NULL DEFAULT 'open',
+			no_recipe_count INTEGER NOT NULL DEFAULT 0,
+			no_recipe_products TEXT DEFAULT '',
+			forecast_qty DECIMAL(15,4) NOT NULL DEFAULT 0,
+			notes TEXT DEFAULT '',
+			created_by VARCHAR(100) DEFAULT '',
+			created_at TIMESTAMP DEFAULT (now() AT TIME ZONE 'UTC')
+		)`,
+		`CREATE TABLE IF NOT EXISTS mrp_run_items (
+			id CHAR(26) PRIMARY KEY,
+			run_id CHAR(26) NOT NULL REFERENCES mrp_runs(id) ON DELETE CASCADE,
+			item_id CHAR(26) NOT NULL REFERENCES stock_items(id),
+			gross_req DECIMAL(15,4) NOT NULL DEFAULT 0,
+			on_hand DECIMAL(15,4) NOT NULL DEFAULT 0,
+			on_order DECIMAL(15,4) NOT NULL DEFAULT 0,
+			in_transit DECIMAL(15,4) NOT NULL DEFAULT 0,
+			safety_stock DECIMAL(15,4) NOT NULL DEFAULT 0,
+			par_level DECIMAL(15,4) NOT NULL DEFAULT 0,
+			moq DECIMAL(15,4) NOT NULL DEFAULT 0,
+			net_req DECIMAL(15,4) NOT NULL DEFAULT 0,
+			suggestion VARCHAR(10) NOT NULL DEFAULT 'none',
+			qty_suggested_base DECIMAL(15,4) NOT NULL DEFAULT 0,
+			source_warehouse_id CHAR(26),
+			last_vendor VARCHAR(200) DEFAULT '',
+			last_price_dist DECIMAL(15,2) NOT NULL DEFAULT 0,
+			action_ref_type VARCHAR(20) DEFAULT '',
+			action_ref_id CHAR(26),
+			action_ref_number VARCHAR(40) DEFAULT '',
+			UNIQUE(run_id, item_id)
+		)`,
+		`ALTER TABLE purchase_requests ADD COLUMN IF NOT EXISTS origin VARCHAR(20) NOT NULL DEFAULT 'manual'`,
+		`ALTER TABLE purchase_requests ADD COLUMN IF NOT EXISTS mrp_run_id CHAR(26)`,
+		`ALTER TABLE purchase_requests ADD COLUMN IF NOT EXISTS need_by_date DATE`,
+		`ALTER TABLE stock_transfers ADD COLUMN IF NOT EXISTS origin VARCHAR(20) NOT NULL DEFAULT 'manual'`,
+		`ALTER TABLE stock_transfers ADD COLUMN IF NOT EXISTS mrp_run_id CHAR(26)`,
+	}
+	for _, m := range ppic2Migrations {
+		if _, err := DB.Exec(m); err != nil {
+			log.Printf("PPIC fase 2 migration skipped: %v", err)
+		}
+	}
+
+	// ── PPIC Fase 3: rencana produksi (MPS) + work order ─────────────────────
+	// WO memposting stok lewat mekanisme movement/batch existing (production_out/
+	// production_in, ref_type='work_order'); hasil produksi menjadi batch baru
+	// ber-HPP aktual + expiry dari shelf_life_days item.
+	ppic3Migrations := []string{
+		`CREATE TABLE IF NOT EXISTS production_plans (
+			id CHAR(26) PRIMARY KEY,
+			plan_number VARCHAR(30) NOT NULL UNIQUE,
+			warehouse_id CHAR(26) NOT NULL REFERENCES warehouses(id),
+			plan_date DATE NOT NULL,
+			status VARCHAR(12) NOT NULL DEFAULT 'draft',
+			notes TEXT DEFAULT '',
+			created_by VARCHAR(100) DEFAULT '',
+			approved_by VARCHAR(100) DEFAULT '',
+			approved_at TIMESTAMP,
+			created_at TIMESTAMP DEFAULT (now() AT TIME ZONE 'UTC'),
+			updated_at TIMESTAMP DEFAULT (now() AT TIME ZONE 'UTC')
+		)`,
+		`CREATE TABLE IF NOT EXISTS production_plan_items (
+			id CHAR(26) PRIMARY KEY,
+			plan_id CHAR(26) NOT NULL REFERENCES production_plans(id) ON DELETE CASCADE,
+			item_id CHAR(26) NOT NULL REFERENCES stock_items(id),
+			qty_planned_base DECIMAL(15,4) NOT NULL,
+			notes TEXT DEFAULT '',
+			UNIQUE(plan_id, item_id)
+		)`,
+		`CREATE TABLE IF NOT EXISTS work_orders (
+			id CHAR(26) PRIMARY KEY,
+			wo_number VARCHAR(30) NOT NULL UNIQUE,
+			plan_id CHAR(26) REFERENCES production_plans(id) ON DELETE SET NULL,
+			warehouse_id CHAR(26) NOT NULL REFERENCES warehouses(id),
+			item_id CHAR(26) NOT NULL REFERENCES stock_items(id),
+			qty_planned_base DECIMAL(15,4) NOT NULL,
+			qty_actual_base DECIMAL(15,4),
+			yield_pct DECIMAL(8,2),
+			status VARCHAR(12) NOT NULL DEFAULT 'planned',
+			started_at TIMESTAMP,
+			finished_at TIMESTAMP,
+			executed_by VARCHAR(100) DEFAULT '',
+			cost_total DECIMAL(15,2) NOT NULL DEFAULT 0,
+			cost_per_unit DECIMAL(15,2) NOT NULL DEFAULT 0,
+			expiry_date DATE,
+			notes TEXT DEFAULT '',
+			created_by VARCHAR(100) DEFAULT '',
+			created_at TIMESTAMP DEFAULT (now() AT TIME ZONE 'UTC')
+		)`,
+		`CREATE TABLE IF NOT EXISTS work_order_materials (
+			id CHAR(26) PRIMARY KEY,
+			wo_id CHAR(26) NOT NULL REFERENCES work_orders(id) ON DELETE CASCADE,
+			item_id CHAR(26) NOT NULL REFERENCES stock_items(id),
+			qty_plan_base DECIMAL(15,4) NOT NULL DEFAULT 0,
+			qty_actual_base DECIMAL(15,4),
+			cost_per_base DECIMAL(15,2) NOT NULL DEFAULT 0,
+			UNIQUE(wo_id, item_id)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_work_orders_wh_status ON work_orders(warehouse_id, status)`,
+		`CREATE INDEX IF NOT EXISTS idx_work_orders_finished ON work_orders(finished_at)`,
+	}
+	for _, m := range ppic3Migrations {
+		if _, err := DB.Exec(m); err != nil {
+			log.Printf("PPIC fase 3 migration skipped: %v", err)
+		}
+	}
+
+	// ── Split izin laporan: Titipan ⟂ Void, Rekonsiliasi ⟂ Shift Kasir ──────
+	// One-shot (marker di app_settings): role yang punya izin lama otomatis
+	// diberi izin baru SEKALI supaya tidak ada yang kehilangan akses saat
+	// deploy; setelah itu pencabutan oleh admin tidak ditimpa saat boot
+	// berikutnya. Izin lama TIDAK dihapus (masih dipakai tab Void / halaman
+	// Shift Kasir), jadi blok split-then-delete biasa tidak bisa dipakai.
+	// Wajib di akhir fungsi ini — re-seed di atas berjalan tiap boot.
+	var splitDone int
+	DB.QueryRow("SELECT COUNT(*) FROM app_settings WHERE key = 'mig_split_titipan_shiftrecon'").Scan(&splitDone)
+	if splitDone == 0 {
+		DB.Exec(`INSERT INTO role_permissions (role, permission)
+			SELECT role, 'reports.titipan.view' FROM role_permissions WHERE permission = 'reports.void.view'
+			ON CONFLICT DO NOTHING`)
+		DB.Exec(`INSERT INTO role_permissions (role, permission)
+			SELECT role, 'shift_reconciliation.view' FROM role_permissions WHERE permission = 'cashier_shifts.view'
+			ON CONFLICT DO NOTHING`)
+		DB.Exec(`INSERT INTO app_settings (key, value) VALUES ('mig_split_titipan_shiftrecon', 'done') ON CONFLICT (key) DO NOTHING`)
+		log.Printf("Permission split: reports.titipan.view & shift_reconciliation.view di-backfill dari izin lama")
+	}
+
+	// ── Seed izin PPIC (one-shot, marker) ───────────────────────────────────
+	// Role yang saat ini boleh melihat Dashboard Gudang otomatis mendapat semua
+	// izin PPIC Fase 1 SEKALI saat deploy; setelah itu pencabutan oleh admin
+	// tidak ditimpa saat boot. Wajib di akhir fungsi ini (lihat catatan blok
+	// split di atas: re-seed coarse-key berjalan tiap boot).
+	var ppicSeeded int
+	DB.QueryRow("SELECT COUNT(*) FROM app_settings WHERE key = 'mig_ppic_phase1'").Scan(&ppicSeeded)
+	if ppicSeeded == 0 {
+		ppicPerms := []string{
+			"ppic.dashboard.view",
+			"ppic.planning.view", "ppic.planning.update",
+			"ppic.expiry.view", "ppic.expiry.ack",
+			"ppic.opname.view", "ppic.opname.create", "ppic.opname.approve",
+		}
+		for _, p := range ppicPerms {
+			DB.Exec(`INSERT INTO role_permissions (role, permission)
+				SELECT DISTINCT role, $1 FROM role_permissions WHERE permission = 'warehouse_dashboard.view'
+				ON CONFLICT DO NOTHING`, p)
+		}
+		DB.Exec(`INSERT INTO app_settings (key, value) VALUES ('mig_ppic_phase1', 'done') ON CONFLICT (key) DO NOTHING`)
+		log.Printf("Permission PPIC Fase 1 di-seed ke role pemegang warehouse_dashboard.view")
+	}
+
+	// ── Seed izin PPIC Fase 2 (one-shot, marker) — lihat catatan blok Fase 1 ──
+	var ppic2Seeded int
+	DB.QueryRow("SELECT COUNT(*) FROM app_settings WHERE key = 'mig_ppic_phase2'").Scan(&ppic2Seeded)
+	if ppic2Seeded == 0 {
+		for _, p := range []string{
+			"ppic.forecast.view", "ppic.forecast.manage",
+			"ppic.mrp.view", "ppic.mrp.run", "ppic.mrp.execute",
+		} {
+			DB.Exec(`INSERT INTO role_permissions (role, permission)
+				SELECT DISTINCT role, $1 FROM role_permissions WHERE permission = 'ppic.dashboard.view'
+				ON CONFLICT DO NOTHING`, p)
+		}
+		DB.Exec(`INSERT INTO app_settings (key, value) VALUES ('mig_ppic_phase2', 'done') ON CONFLICT (key) DO NOTHING`)
+		log.Printf("Permission PPIC Fase 2 di-seed ke role pemegang ppic.dashboard.view")
+	}
+
+	// ── Seed izin PPIC Fase 3 (one-shot, marker) — lihat catatan blok Fase 1 ──
+	var ppic3Seeded int
+	DB.QueryRow("SELECT COUNT(*) FROM app_settings WHERE key = 'mig_ppic_phase3'").Scan(&ppic3Seeded)
+	if ppic3Seeded == 0 {
+		for _, p := range []string{
+			"ppic.production.view", "ppic.production.create", "ppic.production.approve",
+			"ppic.workorders.view", "ppic.workorders.create", "ppic.workorders.execute",
+			"ppic.reports.view", "ppic.reports.export",
+		} {
+			DB.Exec(`INSERT INTO role_permissions (role, permission)
+				SELECT DISTINCT role, $1 FROM role_permissions WHERE permission = 'ppic.dashboard.view'
+				ON CONFLICT DO NOTHING`, p)
+		}
+		DB.Exec(`INSERT INTO app_settings (key, value) VALUES ('mig_ppic_phase3', 'done') ON CONFLICT (key) DO NOTHING`)
+		log.Printf("Permission PPIC Fase 3 di-seed ke role pemegang ppic.dashboard.view")
 	}
 
 	return nil

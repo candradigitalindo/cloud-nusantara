@@ -142,11 +142,15 @@ func Setup(app *fiber.App, cfg *config.Config) {
 
 	// Reports (view-only by nature)
 	admin.Get("/sales-report", middleware.RequirePermission("reports.sales.view"), handlers.GetSalesReport)
+	// Export Excel memakai permission & scope outlet yang sama dengan laporan di layar.
+	admin.Get("/sales-report/export", middleware.RequirePermission("reports.sales.view"), handlers.ExportSalesReport)
 	admin.Get("/unpaid-orders", middleware.RequirePermission("reports.sales.view"), handlers.GetUnpaidOrders)
 	admin.Get("/cashier-shifts", middleware.RequirePermission("cashier_shifts.view"), handlers.GetCashierShiftReport)
-	// Rekonsiliasi shift (tutup kasir vs cloud). Lihat: cashier_shifts.view.
+	// Export Excel memakai permission & scope outlet yang sama dengan laporan di layar.
+	admin.Get("/cashier-shifts/export", middleware.RequirePermission("cashier_shifts.view"), handlers.ExportCashierShiftReport)
+	// Rekonsiliasi shift (tutup kasir vs cloud). Lihat: shift_reconciliation.view (dipisah dari cashier_shifts.view).
 	// Penyesuaian data (ikuti versi kasir) = khusus superadmin, tercatat & bisa dibatalkan.
-	admin.Get("/shift-reconciliation", middleware.RequirePermission("cashier_shifts.view"), handlers.GetShiftReconciliation)
+	admin.Get("/shift-reconciliation", middleware.RequirePermission("shift_reconciliation.view"), handlers.GetShiftReconciliation)
 	admin.Post("/shift-reconciliation/:shiftId/apply", middleware.RequireSuperadmin(), handlers.ApplyShiftAdjustment)
 	admin.Post("/shift-reconciliation/adjustments/:id/revert", middleware.RequireSuperadmin(), handlers.RevertShiftAdjustment)
 	admin.Get("/devices", middleware.RequirePermission("devices.view"), handlers.GetDeviceMonitor)
@@ -164,14 +168,30 @@ func Setup(app *fiber.App, cfg *config.Config) {
 	admin.Post("/cameras/:camId/playback", middleware.RequirePermission("cameras.view"), handlers.StartCameraPlayback(cfg))
 	admin.Post("/cameras/:camId/stop", middleware.RequirePermission("cameras.view"), handlers.StopCameraStream)
 	admin.Get("/product-sales-report", middleware.RequirePermission("reports.product_sales.view"), handlers.GetProductSalesReport)
+	// Export Excel memakai permission & scope outlet yang sama dengan laporan di layar.
+	admin.Get("/product-sales-report/export", middleware.RequirePermission("reports.product_sales.view"), handlers.ExportProductSalesReport)
 	admin.Get("/tax-report", middleware.RequirePermission("reports.tax.view"), handlers.GetTaxReport)
+	// Export Excel memakai permission & scope outlet yang sama dengan laporan di layar.
+	admin.Get("/tax-report/export", middleware.RequirePermission("reports.tax.view"), handlers.ExportTaxReport)
 	admin.Get("/cash-flow-report", middleware.RequirePermission("reports.cashflow.view"), handlers.GetCashFlowReport)
+	// Export Excel memakai permission & scope outlet yang sama dengan laporan di layar.
+	admin.Get("/cash-flow-report/export", middleware.RequirePermission("reports.cashflow.view"), handlers.ExportCashFlowReport)
 	admin.Get("/balance-report", middleware.RequirePermission("reports.balance.view"), handlers.GetBalanceReport)
+	// Export Excel memakai permission & scope outlet yang sama dengan laporan di layar.
+	admin.Get("/balance-report/export", middleware.RequirePermission("reports.balance.view"), handlers.ExportBalanceReport)
 	admin.Get("/profit-loss-report", middleware.RequirePermission("reports.pnl.view"), handlers.GetProfitLossReport)
+	// Export Excel memakai permission & scope outlet yang sama dengan laporan di layar.
+	admin.Get("/profit-loss-report/export", middleware.RequirePermission("reports.pnl.view"), handlers.ExportProfitLossReport)
 	admin.Get("/general-ledger", middleware.RequirePermission("reports.ledger.view"), handlers.GetGeneralLedger)
+	// Export Excel memakai permission & scope outlet yang sama dengan laporan di layar.
+	admin.Get("/general-ledger/export", middleware.RequirePermission("reports.ledger.view"), handlers.ExportGeneralLedger)
 	admin.Get("/void-report", middleware.RequirePermission("reports.void.view"), handlers.GetVoidReport)
-	admin.Get("/titipan-report", middleware.RequirePermission("reports.void.view"), handlers.GetTitipanReport)
+	// Export Excel memakai permission & scope outlet yang sama dengan laporan di layar.
+	admin.Get("/void-report/export", middleware.RequirePermission("reports.void.view"), handlers.ExportVoidReport)
+	admin.Get("/titipan-report", middleware.RequirePermission("reports.titipan.view"), handlers.GetTitipanReport)
 	admin.Get("/discount-report", middleware.RequirePermission("reports.discount.view"), handlers.GetDiscountReport)
+	// Export Excel memakai permission & scope outlet yang sama dengan laporan di layar.
+	admin.Get("/discount-report/export", middleware.RequirePermission("reports.discount.view"), handlers.ExportDiscountReport)
 
 	// Products & Categories — CRUD granular
 	admin.Get("/products", middleware.RequirePermission("products.view"), handlers.AdminGetProducts)
@@ -202,6 +222,8 @@ func Setup(app *fiber.App, cfg *config.Config) {
 	// Purchase requests — granular: submit, approve, purchasing (isi harga), finance (bayar)
 	admin.Get("/procurement-dashboard", middleware.RequirePermission("procurement.dashboard.view"), handlers.GetProcurementDashboardGlobal)
 	admin.Get("/payment-stats", middleware.RequirePermission("finance.payments.view"), handlers.GetPaymentStats)
+	// Export Excel memakai permission & scope yang sama dengan halaman Pembayaran.
+	admin.Get("/procurement-payments/export", middleware.RequirePermission("finance.payments.view"), handlers.ExportProcurementPayments)
 	admin.Get("/purchase-requests", middleware.RequirePermission("procurement.requests.view"), handlers.ListPurchaseRequests)
 	admin.Get("/purchase-requests/:id", middleware.RequirePermission("procurement.requests.view"), handlers.GetPurchaseRequest)
 	admin.Get("/purchase-requests/:id/payment-histories", middleware.RequirePermission("finance.payments.view"), handlers.GetPaymentHistories)
@@ -309,6 +331,48 @@ func Setup(app *fiber.App, cfg *config.Config) {
 	admin.Get("/goods-receipts", middleware.RequireAnyPermission(whView...), handlers.ListGoodsReceipts)
 	admin.Get("/goods-receipts/:id", middleware.RequireAnyPermission(whView...), handlers.GetGoodsReceipt)
 	admin.Post("/goods-receipts", middleware.RequirePermission("stockledger.adjust"), handlers.CreateGoodsReceipt)
+
+	// PPIC — Fase 1: dashboard, par level/ROP, monitor kedaluwarsa, stock opname.
+	// Semua respons difilter scope outlet (gudang pusat + gudang outlet dalam scope).
+	admin.Get("/ppic/dashboard", middleware.RequirePermission("ppic.dashboard.view"), handlers.GetPpicDashboard)
+	admin.Get("/ppic/planning-params", middleware.RequirePermission("ppic.planning.view"), handlers.ListPlanningParams)
+	admin.Put("/ppic/planning-params", middleware.RequirePermission("ppic.planning.update"), handlers.UpsertPlanningParams)
+	admin.Post("/ppic/planning-params/auto-fill", middleware.RequirePermission("ppic.planning.update"), handlers.AutoFillPlanningParams)
+	admin.Get("/ppic/expiry", middleware.RequirePermission("ppic.expiry.view"), handlers.GetExpiryMonitor)
+	admin.Post("/ppic/expiry/:batchId/ack", middleware.RequirePermission("ppic.expiry.ack"), handlers.AckExpiryBatch)
+	admin.Get("/ppic/opnames", middleware.RequirePermission("ppic.opname.view"), handlers.ListStockOpnames)
+	admin.Get("/ppic/opnames/:id", middleware.RequirePermission("ppic.opname.view"), handlers.GetStockOpname)
+	admin.Post("/ppic/opnames", middleware.RequirePermission("ppic.opname.create"), handlers.CreateStockOpname)
+	admin.Put("/ppic/opnames/:id/items", middleware.RequirePermission("ppic.opname.create"), handlers.UpdateOpnameItems)
+	admin.Post("/ppic/opnames/:id/submit", middleware.RequirePermission("ppic.opname.create"), handlers.SubmitStockOpname)
+	admin.Post("/ppic/opnames/:id/approve", middleware.RequirePermission("ppic.opname.approve"), handlers.ApproveStockOpname)
+	admin.Post("/ppic/opnames/:id/cancel", middleware.RequirePermission("ppic.opname.create"), handlers.CancelStockOpname)
+	// PPIC — Fase 2: demand forecast + MRP (saran beli/transfer masuk alur existing).
+	admin.Get("/ppic/forecasts", middleware.RequirePermission("ppic.forecast.view"), handlers.ListForecasts)
+	admin.Get("/ppic/forecasts/history", middleware.RequirePermission("ppic.forecast.view"), handlers.GetForecastSalesHistory)
+	admin.Put("/ppic/forecasts", middleware.RequirePermission("ppic.forecast.manage"), handlers.UpdateForecasts)
+	admin.Post("/ppic/forecasts/generate", middleware.RequirePermission("ppic.forecast.manage"), handlers.GenerateForecasts)
+	admin.Get("/ppic/mrp/runs", middleware.RequirePermission("ppic.mrp.view"), handlers.ListMrpRuns)
+	admin.Get("/ppic/mrp/runs/:id", middleware.RequirePermission("ppic.mrp.view"), handlers.GetMrpRun)
+	admin.Post("/ppic/mrp/run", middleware.RequirePermission("ppic.mrp.run"), handlers.RunMrp)
+	admin.Post("/ppic/mrp/runs/:id/create-pr", middleware.RequirePermission("ppic.mrp.execute"), handlers.CreateMrpPurchaseRequest)
+	admin.Post("/ppic/mrp/runs/:id/create-transfer", middleware.RequirePermission("ppic.mrp.execute"), handlers.CreateMrpTransfer)
+	// PPIC — Fase 3: rencana produksi (MPS) + work order + laporan & export.
+	admin.Get("/ppic/producible-items", middleware.RequirePermission("ppic.production.view"), handlers.ListProducibleItems)
+	admin.Get("/ppic/production-plans", middleware.RequirePermission("ppic.production.view"), handlers.ListProductionPlans)
+	admin.Get("/ppic/production-plans/:id", middleware.RequirePermission("ppic.production.view"), handlers.GetProductionPlan)
+	admin.Post("/ppic/production-plans", middleware.RequirePermission("ppic.production.create"), handlers.CreateProductionPlan)
+	admin.Post("/ppic/production-plans/:id/approve", middleware.RequirePermission("ppic.production.approve"), handlers.ApproveProductionPlan)
+	admin.Post("/ppic/production-plans/:id/release", middleware.RequirePermission("ppic.production.approve"), handlers.ReleaseProductionPlan)
+	admin.Post("/ppic/production-plans/:id/cancel", middleware.RequirePermission("ppic.production.create"), handlers.CancelProductionPlan)
+	admin.Get("/ppic/work-orders", middleware.RequirePermission("ppic.workorders.view"), handlers.ListWorkOrders)
+	admin.Get("/ppic/work-orders/:id", middleware.RequirePermission("ppic.workorders.view"), handlers.GetWorkOrder)
+	admin.Post("/ppic/work-orders", middleware.RequirePermission("ppic.workorders.create"), handlers.CreateWorkOrder)
+	admin.Post("/ppic/work-orders/:id/start", middleware.RequirePermission("ppic.workorders.execute"), handlers.StartWorkOrder)
+	admin.Post("/ppic/work-orders/:id/finish", middleware.RequirePermission("ppic.workorders.execute"), handlers.FinishWorkOrder)
+	admin.Post("/ppic/work-orders/:id/cancel", middleware.RequirePermission("ppic.workorders.create"), handlers.CancelWorkOrder)
+	admin.Get("/ppic/reports/:tab", middleware.RequirePermission("ppic.reports.view"), handlers.GetPpicReport)
+	admin.Get("/ppic/reports/:tab/export", middleware.RequirePermission("ppic.reports.export"), handlers.ExportPpicReport)
 
 	// Settings — view + update only (no create/delete for settings)
 	admin.Get("/settings", middleware.RequirePermission("settings.company.view"), handlers.GetAllSettings)

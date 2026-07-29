@@ -30,4 +30,13 @@ export const purchaseApi = {
 
   getPaymentHistories: (id) =>
     apiClient.get(`/admin/purchase-requests/${id}/payment-histories`),
+
+  // Download Excel — responseType blob melewati unwrap envelope di client.js;
+  // timeout dinaikkan karena file dibuat on-the-fly di server.
+  exportPayments: (params) =>
+    apiClient.get('/admin/procurement-payments/export', {
+      params,
+      responseType: 'blob',
+      timeout: 120000,
+    }),
 }
