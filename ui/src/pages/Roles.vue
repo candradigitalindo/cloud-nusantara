@@ -375,6 +375,7 @@ const REDIRECT_GROUPS = [
   ]},
   { category: 'Penjualan', options: [
     { value: '/reservations', label: 'Reservasi', perm: 'reservations.view' },
+    { value: '/customers',    label: 'Pelanggan', perm: 'customers.view' },
   ]},
   { category: 'Laporan', options: [
     { value: '/sales-report',          label: 'Laporan Pendapatan',       perm: 'reports.sales.view' },

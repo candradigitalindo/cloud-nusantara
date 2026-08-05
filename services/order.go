@@ -81,6 +81,10 @@ func SaveOrder(outletID string, req models.PushOrderRequest) (string, error) {
 		database.DB.Exec(`DELETE FROM cloud_transactions WHERE TRIM(order_id) = $1`, oid)
 	}
 
+	// Master pelanggan: cocokkan/daftarkan pelanggan dari nama & no. HP order
+	// (identitas utama = no. HP), lalu tautkan customer_id untuk histori kunjungan.
+	UpsertCustomerForOrder(strings.TrimSpace(cloudID), req.CustomerName, req.CustomerPhone)
+
 	go logSync(outletID, "push_order", "order", 1, "success", "")
 	BroadcastSync("order", outletID)
 	return cloudID, nil

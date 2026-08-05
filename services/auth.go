@@ -31,6 +31,7 @@ var AllPermissions = []string{
 
 	// Penjualan
 	"reservations.view", "reservations.create", "reservations.update", "reservations.delete",
+	"customers.view",
 
 	// Laporan (view-only) + finance
 	"reports.sales.view",

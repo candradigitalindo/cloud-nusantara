@@ -51,6 +51,7 @@ const ShiftReconciliation = () => import('@/pages/ShiftReconciliation.vue')
 const ProductSalesReport  = () => import('@/pages/ProductSalesReport.vue')
 const Assets              = () => import('@/pages/Assets.vue')
 const Reservations        = () => import('@/pages/Reservations.vue')
+const Customers           = () => import('@/pages/Customers.vue')
 const ReservePublic       = () => import('@/pages/ReservePublic.vue')
 const NotFound            = () => import('@/pages/NotFound.vue')
 const Forbidden           = () => import('@/pages/Forbidden.vue')
@@ -482,6 +483,12 @@ const routes = [
         name: 'Reservations',
         component: Reservations,
         meta: { title: 'Reservasi — Cloud POS', requiresAuth: true, permission: 'reservations.view' },
+      },
+      {
+        path: 'customers',
+        name: 'Customers',
+        component: Customers,
+        meta: { title: 'Pelanggan — Cloud POS', requiresAuth: true, permission: 'customers.view' },
       },
       {
         path: '403',

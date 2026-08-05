@@ -149,7 +149,10 @@ const CATEGORIES = [
   },
   {
     label: 'Penjualan', icon: IC.cart,
-    items: [{ type: 'crud', module: 'reservations', label: 'Reservasi', icon: IC.cart }],
+    items: [
+      { type: 'crud', module: 'reservations', label: 'Reservasi', icon: IC.cart },
+      { type: 'single', key: 'customers.view', label: 'Pelanggan', icon: IC.users },
+    ],
   },
   {
     label: 'Laporan', icon: IC.finance,

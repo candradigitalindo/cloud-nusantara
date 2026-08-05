@@ -258,6 +258,10 @@ func Setup(app *fiber.App, cfg *config.Config) {
 	admin.Post("/assets/:id/maintenances", middleware.RequirePermission("assets.update"), handlers.AddAssetMaintenance)
 	admin.Delete("/assets/:id/maintenances/:mid", middleware.RequirePermission("assets.update"), handlers.DeleteAssetMaintenance)
 
+	// Pelanggan (Penjualan) — master otomatis dari order kasir, scoped per outlet
+	admin.Get("/customers", middleware.RequirePermission("customers.view"), handlers.ListCustomers)
+	admin.Get("/customers/:id", middleware.RequirePermission("customers.view"), handlers.GetCustomer)
+
 	// Reservasi (Penjualan), scoped per outlet
 	admin.Get("/reservations", middleware.RequirePermission("reservations.view"), handlers.ListReservations)
 	admin.Get("/reservations/:id", middleware.RequirePermission("reservations.view"), handlers.GetReservation)

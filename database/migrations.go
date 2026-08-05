@@ -1799,6 +1799,30 @@ func RunMigrations() error {
 		}
 	}
 
+	// ── Pelanggan: master data otomatis dari cloud_orders ───────────────────
+	// Identitas utama = nomor HP (dinormalisasi 08xx); order tanpa HP dicocokkan
+	// per nama (lower). Histori kunjungan TIDAK diduplikasi: cloud_orders diberi
+	// customer_id sehingga histori = query orders per pelanggan.
+	customerMigrations := []string{
+		`CREATE TABLE IF NOT EXISTS customers (
+			id CHAR(26) PRIMARY KEY,
+			name VARCHAR(150) NOT NULL DEFAULT '',
+			phone VARCHAR(40) NOT NULL DEFAULT '',
+			notes TEXT NOT NULL DEFAULT '',
+			created_at TIMESTAMP DEFAULT (now() AT TIME ZONE 'UTC'),
+			updated_at TIMESTAMP DEFAULT (now() AT TIME ZONE 'UTC')
+		)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_customers_phone ON customers(phone) WHERE phone <> ''`,
+		`CREATE INDEX IF NOT EXISTS idx_customers_name_lower ON customers(LOWER(name))`,
+		`ALTER TABLE cloud_orders ADD COLUMN IF NOT EXISTS customer_id CHAR(26)`,
+		`CREATE INDEX IF NOT EXISTS idx_cloud_orders_customer ON cloud_orders(customer_id)`,
+	}
+	for _, m := range customerMigrations {
+		if _, err := DB.Exec(m); err != nil {
+			log.Printf("Customer migration skipped: %v", err)
+		}
+	}
+
 	// ── Split izin laporan: Titipan ⟂ Void, Rekonsiliasi ⟂ Shift Kasir ──────
 	// One-shot (marker di app_settings): role yang punya izin lama otomatis
 	// diberi izin baru SEKALI supaya tidak ada yang kehilangan akses saat
@@ -1873,6 +1897,19 @@ func RunMigrations() error {
 		}
 		DB.Exec(`INSERT INTO app_settings (key, value) VALUES ('mig_ppic_phase3', 'done') ON CONFLICT (key) DO NOTHING`)
 		log.Printf("Permission PPIC Fase 3 di-seed ke role pemegang ppic.dashboard.view")
+	}
+
+	// ── Seed izin Pelanggan (one-shot, marker) — lihat catatan blok Fase 1 ──
+	// Role yang boleh melihat Reservasi (modul Penjualan) otomatis mendapat
+	// customers.view SEKALI saat deploy.
+	var custSeeded int
+	DB.QueryRow("SELECT COUNT(*) FROM app_settings WHERE key = 'mig_customers_perm'").Scan(&custSeeded)
+	if custSeeded == 0 {
+		DB.Exec(`INSERT INTO role_permissions (role, permission)
+			SELECT DISTINCT role, 'customers.view' FROM role_permissions WHERE permission = 'reservations.view'
+			ON CONFLICT DO NOTHING`)
+		DB.Exec(`INSERT INTO app_settings (key, value) VALUES ('mig_customers_perm', 'done') ON CONFLICT (key) DO NOTHING`)
+		log.Printf("Permission customers.view di-seed ke role pemegang reservations.view")
 	}
 
 	return nil

@@ -37,6 +37,10 @@ func main() {
 		log.Printf("Admin seeder warning: %v", err)
 	}
 
+	// Pelanggan: proses order lama (pra-fitur) menjadi master pelanggan, one-shot.
+	// Di goroutine agar boot tidak tertahan; upsert per-order idempotent.
+	go services.BackfillCustomers()
+
 	// CCTV relay: siapkan kunci enkripsi kredensial RTSP, secret stream token,
 	// dan alamat media server go2rtc.
 	services.InitCCTV(cfg.CameraEncKey, cfg.JWTSecret, cfg.Go2rtcURL)

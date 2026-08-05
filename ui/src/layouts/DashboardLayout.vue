@@ -369,6 +369,7 @@ const NAV_ITEMS_DATA = [
     </svg>`,
     children: [
       { to: '/reservations', label: 'Reservasi', permission: 'reservations.view' },
+      { to: '/customers', label: 'Pelanggan', permission: 'customers.view' },
     ],
   },
   {
