@@ -61,7 +61,7 @@
       <div class="legend">
         <span class="lg-title">Cara baca:</span>
         <span class="lg-item"><span class="lg-chip lg-chip--f">F 12</span> forecast (perkiraan terjual, porsi)</span>
-        <span class="lg-item"><span class="lg-chip lg-chip--a">✓ 15</span> aktual terjual (hari yang sudah lewat)</span>
+        <span class="lg-item"><span class="lg-chip lg-chip--a"><svg class="inline-block align-[-1px]" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> 15</span> aktual terjual (hari yang sudah lewat)</span>
         <span class="lg-item"><span class="lg-chip lg-chip--m">18</span> angka biru = diubah manual</span>
         <span class="lg-item"><span class="lg-chip lg-chip--d">20</span> kuning = belum disimpan</span>
         <span class="lg-item text-gray-400">· Klik <b>nama produk</b> untuk melihat histori penjualan 4 minggu (bahan rumus forecast)</span>
@@ -100,14 +100,14 @@
                 </div>
               </td>
               <td v-for="c in r.cells" :key="c.date" class="td-cell" :class="{ 'td-today': isToday(c.date), 'td-past': isPast(c.date) }">
-                <!-- Hari lewat: forecast vs aktual, diberi label F / ✓ -->
+                <!-- Hari lewat: forecast vs aktual, diberi label F / tanda cek -->
                 <template v-if="isPast(c.date)">
                   <div class="cell-line" :class="c.qty_manual != null ? 'txt-manual' : ''" title="Forecast (perkiraan)">
                     <span class="cell-tag">F</span>{{ fmtQty(effQty(c)) }}
                   </div>
                   <div class="cell-actual" :class="actualClass(c)" title="Aktual terjual">
-                    <template v-if="c.qty_actual == null"><span class="cell-tag">✓</span>?</template>
-                    <template v-else><span class="cell-tag">✓</span>{{ fmtQty(c.qty_actual) }}</template>
+                    <template v-if="c.qty_actual == null"><span class="cell-tag"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>?</template>
+                    <template v-else><span class="cell-tag"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>{{ fmtQty(c.qty_actual) }}</template>
                   </div>
                 </template>
                 <!-- Hari ini & depan: editable -->
@@ -148,7 +148,7 @@
               <td class="tf-label">TOTAL halaman ini ({{ rows.length }} produk)</td>
               <td v-for="(t, i) in colTotals" :key="i" class="td-cell tf-cell" :class="{ 'td-today': isToday(t.date), 'td-past': isPast(t.date) }">
                 <div class="cell-line tf-f" title="Total forecast"><span class="cell-tag">F</span>{{ fmtQty(t.forecast) }}</div>
-                <div v-if="isPast(t.date)" class="cell-actual tf-a" title="Total aktual terjual"><span class="cell-tag">✓</span>{{ fmtQty(t.actual) }}</div>
+                <div v-if="isPast(t.date)" class="cell-actual tf-a" title="Total aktual terjual"><span class="cell-tag"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>{{ fmtQty(t.actual) }}</div>
               </td>
               <td></td>
             </tr>
@@ -158,7 +158,7 @@
 
       <div class="px-4 py-3 border-t border-gray-100 flex items-center justify-between">
         <span class="text-xs text-gray-400">
-          {{ d?.total ?? 0 }} produk ter-forecast · angka dalam porsi terjual · <b>F</b> = forecast, <b>✓</b> = aktual, <b>?</b> = aktual belum diisi (menunggu proses malam)
+          {{ d?.total ?? 0 }} produk ter-forecast · angka dalam porsi terjual · <b>F</b> = forecast, <b><svg class="inline-block align-[-1px]" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></b> = aktual, <b>?</b> = aktual belum diisi (menunggu proses malam)
         </span>
         <AppPagination :page="page" :total-pages="totalPages" @change="changePage" />
       </div>

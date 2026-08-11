@@ -24,7 +24,10 @@
           <input type="checkbox" v-model="runForm.include_par" class="rounded text-emerald-600" />
           Isi ulang sampai Par Level
         </label>
-        <AppButton v-if="canRun" variant="primary" :loading="running" @click="doRun">⚙ Hitung Kebutuhan</AppButton>
+        <AppButton v-if="canRun" variant="primary" :loading="running" @click="doRun">
+          <svg class="inline-block align-[-2px] mr-1" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="16" x2="16" y1="14" y2="18"/><path d="M16 10h.01"/><path d="M12 10h.01"/><path d="M8 10h.01"/><path d="M12 14h.01"/><path d="M8 14h.01"/><path d="M12 18h.01"/><path d="M8 18h.01"/></svg>
+          Hitung Kebutuhan
+        </AppButton>
         <div class="min-w-[240px] ml-auto">
           <label class="text-xs font-semibold text-gray-600">Riwayat Run</label>
           <SearchSelect v-model="selectedRunId" :options="runOptions" placeholder="Pilih run sebelumnya" @change="openRun" />
@@ -46,7 +49,8 @@
       </div>
 
       <div v-if="run.no_recipe_count > 0" class="warn-note">
-        ⚠ <b>{{ run.no_recipe_count }} produk ter-forecast tidak punya resep/tautan bahan</b> sehingga tidak ikut dihitung:
+        <svg class="inline-block align-[-2px] mr-0.5" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+        <b>{{ run.no_recipe_count }} produk ter-forecast tidak punya resep/tautan bahan</b> sehingga tidak ikut dihitung:
         {{ run.no_recipe_products }}<span v-if="run.no_recipe_count > 12">, …</span>.
         Lengkapi resep di halaman <router-link to="/recipes" class="underline font-semibold">Resep</router-link> agar MRP representatif.
       </div>

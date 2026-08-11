@@ -79,10 +79,10 @@
       <div class="row2">
         <div class="card">
           <div class="card-hd">
-            <span class="card-title">🔔 Pusat Peringatan</span>
+            <span class="card-title"><svg class="inline-block align-[-2px] mr-1" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg> Pusat Peringatan</span>
             <span class="alert-count" v-if="d.alerts.length">{{ d.alerts.length }}</span>
           </div>
-          <div v-if="!d.alerts.length" class="empty-sm ok">Tidak ada peringatan — semua terkendali ✓</div>
+          <div v-if="!d.alerts.length" class="empty-sm ok">Tidak ada peringatan — semua terkendali <svg class="inline-block align-[-2px]" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
           <div v-else class="alert-list">
             <router-link v-for="(a, i) in d.alerts" :key="i" class="alert-row" :class="`alert--${a.severity}`" :to="alertLink(a)">
               <span class="alert-dot" :class="`dot--${a.severity}`"></span>
@@ -130,7 +130,7 @@
             <span class="card-title">Nilai Kedaluwarsa 30 Hari ke Depan</span>
             <router-link to="/ppic/expiry" class="card-link">Monitor FEFO →</router-link>
           </div>
-          <div v-if="!d.expiry_calendar.length" class="empty-sm ok">Tidak ada batch kedaluwarsa dalam 30 hari ✓</div>
+          <div v-if="!d.expiry_calendar.length" class="empty-sm ok">Tidak ada batch kedaluwarsa dalam 30 hari <svg class="inline-block align-[-2px]" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
           <div v-else class="exp-cal">
             <div v-for="p in d.expiry_calendar" :key="p.date" class="exp-day" :class="expDayClass(p.date)"
               :title="`${fmtDate(p.date)}: ${p.count} batch · ${fmtRp(p.value)}`">
@@ -146,7 +146,7 @@
             <span class="card-title">Top Waste 30 Hari</span>
             <router-link to="/stock-wastes" class="card-link">Lihat Semua →</router-link>
           </div>
-          <div v-if="!d.top_waste.length" class="empty-sm ok">Tidak ada waste 30 hari terakhir ✓</div>
+          <div v-if="!d.top_waste.length" class="empty-sm ok">Tidak ada waste 30 hari terakhir <svg class="inline-block align-[-2px]" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
           <table v-else class="mini-table">
             <thead><tr><th>Item</th><th class="th-r">Qty</th><th class="th-r">Nilai</th><th></th></tr></thead>
             <tbody>

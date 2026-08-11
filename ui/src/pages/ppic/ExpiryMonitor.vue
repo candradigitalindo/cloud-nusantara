@@ -55,7 +55,7 @@
               <td class="text-[11px] text-gray-400">{{ refLabel(r.ref_type) }}</td>
               <td>
                 <div v-if="r.ack_at" class="text-[11px] text-emerald-700">
-                  ✓ Ditindak oleh {{ r.ack_by }}<br/>
+                  <svg class="inline-block align-[-2px]" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Ditindak oleh {{ r.ack_by }}<br/>
                   <span class="text-gray-400">{{ r.ack_note || '—' }}</span>
                 </div>
                 <span v-else class="text-[11px] text-gray-300">belum</span>

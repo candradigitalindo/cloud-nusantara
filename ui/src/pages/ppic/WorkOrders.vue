@@ -119,7 +119,7 @@
               </tr>
             </tbody>
           </table>
-          <p v-if="insufficient" class="text-[11px] text-red-600 mt-1">⚠ Ada bahan yang stoknya kurang — posting akan gagal bila tidak dikoreksi.</p>
+          <p v-if="insufficient" class="text-[11px] text-red-600 mt-1"><svg class="inline-block align-[-2px] mr-0.5" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg> Ada bahan yang stoknya kurang — posting akan gagal bila tidak dikoreksi.</p>
         </div>
 
         <textarea v-model="finishForm.notes" rows="2" placeholder="Catatan produksi (opsional)..."
