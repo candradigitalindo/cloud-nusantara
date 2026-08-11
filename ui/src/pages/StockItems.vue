@@ -45,7 +45,7 @@
         <input v-model="search" @input="debouncedLoad" placeholder="Cari nama / kode..."
           class="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-400" />
         <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer select-none">
-          <input type="checkbox" v-model="activeOnly" @change="load" class="rounded text-emerald-600" />
+          <input type="checkbox" v-model="activeOnly" @change="resetAndLoad" class="rounded text-emerald-600" />
           Aktif saja
         </label>
       </div>
@@ -482,6 +482,8 @@
                       :options="stockItemOptions"
                       placeholder="Pilih bahan..."
                       searchPlaceholder="Cari..."
+                      valueKey="value"
+                      labelKey="label"
                       @change="onRecipeItemChange(idx)"
                     />
                   </td>
@@ -527,6 +529,8 @@ import AppAlert      from '@/components/ui/AppAlert.vue'
 import AppPagination from '@/components/ui/AppPagination.vue'
 import SearchSelect  from '@/components/ui/SearchSelect.vue'
 import { formatWarehouseOptionLabel } from '@/utils/warehouse.js'
+import { formatRupiah } from '@/utils/format.js'
+import debounce from 'lodash/debounce'
 
 const toast = useToastStore()
 const loading = ref(false)
@@ -581,14 +585,16 @@ async function openRecipe(row) {
   }
 
   try {
+    // apiClient sudah meng-unwrap envelope {success,data} → responsnya array langsung.
     const data = await stockItemRecipesApi.get(row.id)
-    recipeItems.value = (data.data || []).map(r => ({
+    const list = Array.isArray(data) ? data : (data?.data || [])
+    recipeItems.value = list.map(r => ({
       item_id: r.child_item_id,
       qty_base: r.qty_base,
       unit: r.unit,
     }))
-    if (data.data?.length > 0) {
-      recipeVisibility.value = data.data[0].visibility || 'secret'
+    if (list.length > 0) {
+      recipeVisibility.value = list[0].visibility || 'secret'
     }
   } catch (e) {
     recipeItems.value = []
@@ -678,17 +684,17 @@ const categoryOptions = computed(() => [
   ...categories.value.map(c => ({ label: c.name, value: c.name })),
 ])
 
-function formatRupiah(v) {
-  return 'Rp ' + Number(v || 0).toLocaleString('id-ID')
+const debouncedLoad = debounce(resetAndLoad, 400)
+
+function resetAndLoad() {
+  // watch(page) yang memanggil load; hindari request ganda saat pindah ke hal. 1
+  if (page.value === 1) load()
+  else page.value = 1
 }
 
-let debounceTimer = null
-function debouncedLoad() {
-  clearTimeout(debounceTimer)
-  debounceTimer = setTimeout(() => { page.value = 1; load() }, 400)
-}
-
+let loadSeq = 0
 async function load() {
+  const seq = ++loadSeq
   loading.value = true
   errorMsg.value = ''
   try {
@@ -698,6 +704,7 @@ async function load() {
       active_only: activeOnly.value ? 'true' : '',
       warehouse_id: selectedWarehouseId.value || '',
     })
+    if (seq !== loadSeq) return // respons lama, sudah ada request lebih baru
     items.value = data.data || []
     total.value = data.total || 0
     totalPages.value = data.total_pages || 1
@@ -708,7 +715,7 @@ async function load() {
   }
 }
 
-watch(selectedWarehouseId, () => { page.value = 1; load() })
+watch(selectedWarehouseId, resetAndLoad)
 
 function getWarehouseLabel(row) {
   return formatWarehouseOptionLabel(warehouseMap.value[row.warehouse_id] || row)

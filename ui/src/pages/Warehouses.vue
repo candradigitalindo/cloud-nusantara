@@ -185,11 +185,14 @@ const COLUMNS = [
   { key: 'actions',     label: '',           sortable: false },
 ]
 
+let loadSeq = 0
 async function load() {
+  const seq = ++loadSeq
   loading.value = true
   errorMsg.value = ''
   try {
     const data = await warehousesApi.list({ page: page.value, limit, type: filterType.value })
+    if (seq !== loadSeq) return // respons lama, sudah ada request lebih baru
     warehouses.value = data.data || []
     totalPages.value = data.total_pages || 1
   } catch (e) {
@@ -200,8 +203,9 @@ async function load() {
 }
 
 function applyFilters() {
-  page.value = 1
-  load()
+  // watch(page) yang memanggil load; hindari request ganda saat pindah ke hal. 1
+  if (page.value === 1) load()
+  else page.value = 1
 }
 
 async function loadOutlets() {

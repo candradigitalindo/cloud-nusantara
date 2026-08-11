@@ -54,6 +54,9 @@
             <span class="text-xs">{{ row.total_time || 0 }} menit</span>
           </div>
         </template>
+        <template #cell-created_at="{ row }">
+          <span class="text-xs text-gray-500">{{ formatDate(row.created_at) }}</span>
+        </template>
         <template #cell-actions="{ row }">
           <div class="flex items-center gap-2">
             <button @click="openEdit(row)" class="p-2 text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all" title="Edit Resep & SOP">
@@ -199,7 +202,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { recipeMastersApi, stockItemsApi } from '@/api/warehouse.js'
 import { outletsApi } from '@/api/outlets.js'
 import { formatDateTime } from '@/utils/format.js'
@@ -261,7 +264,8 @@ async function fetchAll() {
       outletsApi.myOutlets(),
       stockItemsApi.list({ limit: 1000, active_only: true })
     ])
-    recipes.value = resR.data || []
+    // apiClient meng-unwrap envelope {success,data} → responsnya array langsung.
+    recipes.value = Array.isArray(resR) ? resR : (resR?.data || [])
     outlets.value = resO.outlets || resO || []
     allStockItems.value = resS.data || []
   } catch (e) {
@@ -291,11 +295,11 @@ function openCreate() {
 }
 
 async function openEdit(row) {
-  loading.value = true
   activeTab.value = 'items'
   try {
     const res = await recipeMastersApi.get(row.id)
-    const data = res.data
+    // apiClient sudah meng-unwrap envelope → res adalah objek resepnya.
+    const data = res?.data ?? res
     editingId.value = data.id
     
     let steps = []
@@ -313,8 +317,6 @@ async function openEdit(row) {
     showModal.value = true
   } catch (e) {
     toast.error('Gagal memuat detail resep')
-  } finally {
-    loading.value = false
   }
 }
 

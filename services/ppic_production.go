@@ -446,6 +446,16 @@ func FinishWorkOrder(id string, req models.WorkOrderFinishRequest, actor string)
 	}
 	defer tx.Rollback()
 
+	// Kunci WO & validasi ulang status di dalam transaksi: cek di atas tanpa lock,
+	// dua finish bersamaan bisa sama-sama lolos dan memposting stok dua kali.
+	var curStatus string
+	if err := tx.QueryRow(`SELECT status FROM work_orders WHERE id = $1 FOR UPDATE`, id).Scan(&curStatus); err != nil {
+		return nil, err
+	}
+	if curStatus != "in_progress" && curStatus != "planned" {
+		return nil, fmt.Errorf("WO berstatus %s tidak bisa diselesaikan", curStatus)
+	}
+
 	var totalCost float64
 	for _, m := range wo.Materials {
 		qty, ok := actuals[m.ItemID]
@@ -457,18 +467,25 @@ func FinishWorkOrder(id string, req models.WorkOrderFinishRequest, actor string)
 				wo.ID, "work_order", wo.WoNumber, "Bahan produksi "+wo.ItemName, actor, -qty, -qty, 0, ""); err != nil {
 				return nil, fmt.Errorf("%s: %w", m.ItemName, err)
 			}
-			// Biaya aktual hasil pemotongan FIFO (pola ProduceStockItem).
+			// Biaya aktual hasil pemotongan FIFO (pola ProduceStockItem). Gagal baca
+			// harus jadi error — bila ditelan, biaya bahan ini hilang dari HPP.
 			var cost float64
 			if err := tx.QueryRow(`
 				SELECT cost_per_base FROM stock_movements
-				WHERE item_id = $1 AND warehouse_id = $2 AND ref_type = 'work_order' AND ref_number = $3
-				ORDER BY created_at DESC LIMIT 1`, m.ItemID, wo.WarehouseID, wo.WoNumber).Scan(&cost); err == nil {
-				totalCost += cost * qty
-				tx.Exec(`UPDATE work_order_materials SET cost_per_base = $3, qty_actual_base = $4 WHERE wo_id = $1 AND item_id = $2`,
-					wo.ID, m.ItemID, cost, qty)
+				WHERE item_id = $1 AND warehouse_id = $2 AND ref_type = 'work_order' AND ref_id = $3
+				  AND movement_type = 'production_out'
+				ORDER BY created_at DESC, id DESC LIMIT 1`, m.ItemID, wo.WarehouseID, wo.ID).Scan(&cost); err != nil {
+				return nil, fmt.Errorf("gagal baca biaya aktual %s: %w", m.ItemName, err)
+			}
+			totalCost += cost * qty
+			if _, err := tx.Exec(`UPDATE work_order_materials SET cost_per_base = $3, qty_actual_base = $4 WHERE wo_id = $1 AND item_id = $2`,
+				wo.ID, m.ItemID, cost, qty); err != nil {
+				return nil, err
 			}
 		} else {
-			tx.Exec(`UPDATE work_order_materials SET qty_actual_base = 0 WHERE wo_id = $1 AND item_id = $2`, wo.ID, m.ItemID)
+			if _, err := tx.Exec(`UPDATE work_order_materials SET qty_actual_base = 0 WHERE wo_id = $1 AND item_id = $2`, wo.ID, m.ItemID); err != nil {
+				return nil, err
+			}
 		}
 	}
 

@@ -5,6 +5,7 @@ import (
 	"cloud-pos/models"
 	"database/sql"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -71,9 +72,13 @@ func ListStockItems(search string, activeOnly bool, warehouseID string, outletSc
 	}
 	offset := (page - 1) * limit
 	args = append(args, limit, offset)
+	// avg_cost katalog dihitung dari ledger (rata-rata tertimbang semua gudang) —
+	// kolom stock_items.avg_cost tidak pernah ditulis, selalu 0.
 	rows, err := database.DB.Query(fmt.Sprintf(`
 		SELECT si.id, si.code, si.name, si.category, si.base_unit, si.dist_unit, si.dist_ratio, si.dist_unit_label,
-		       si.avg_cost, si.min_stock, si.notes, si.is_active,
+		       (SELECT COALESCE(SUM(l.qty_base * l.avg_cost) / NULLIF(SUM(l.qty_base), 0), 0)
+		        FROM stock_ledger l WHERE l.item_id = si.id AND l.qty_base > 0) AS avg_cost,
+		       si.min_stock, si.notes, si.is_active,
 		       TO_CHAR(si.created_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
 		       TO_CHAR(si.updated_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
 		       %s AS total_stock,
@@ -105,7 +110,9 @@ func GetStockItem(id string) (*models.StockItem, error) {
 	var s models.StockItem
 	err := database.DB.QueryRow(`
 		SELECT id, code, name, category, base_unit, dist_unit, dist_ratio, dist_unit_label,
-		       avg_cost, min_stock, notes, is_active,
+		       (SELECT COALESCE(SUM(l.qty_base * l.avg_cost) / NULLIF(SUM(l.qty_base), 0), 0)
+		        FROM stock_ledger l WHERE l.item_id = stock_items.id AND l.qty_base > 0) AS avg_cost,
+		       min_stock, notes, is_active,
 		       TO_CHAR(created_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
 		       TO_CHAR(updated_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
 		       (SELECT COALESCE(SUM(qty_base), 0) FROM stock_ledger WHERE item_id = stock_items.id) AS total_stock
@@ -607,6 +614,10 @@ func DeleteWarehouse(id string) error {
 
 // ── Stock Ledger ──────────────────────────────────────────────
 
+// effMinStock: ambang stok minimum efektif per baris ledger — pakai min_stock
+// per-gudang bila diset (>0), selain itu jatuh ke min_stock katalog.
+const effMinStock = "COALESCE(NULLIF(sl.min_stock, 0), si.min_stock)"
+
 func GetStockLedger(warehouseID, itemID, search string, lowStockOnly bool, outletIDs []string, page, limit int) (*models.StockLedgerResponse, error) {
 	where := "WHERE 1=1"
 	args := []interface{}{}
@@ -627,7 +638,7 @@ func GetStockLedger(warehouseID, itemID, search string, lowStockOnly bool, outle
 		i += 2
 	}
 	if lowStockOnly {
-		where += " AND si.min_stock > 0 AND sl.qty_base < si.min_stock"
+		where += fmt.Sprintf(" AND %s > 0 AND sl.qty_base < %s", effMinStock, effMinStock)
 	}
 	if outletIDs != nil {
 		where += fmt.Sprintf(" AND w.outlet_id = ANY($%d)", i)
@@ -642,11 +653,11 @@ func GetStockLedger(warehouseID, itemID, search string, lowStockOnly bool, outle
 	// Hitung total dan ringkasan
 	err := database.DB.QueryRow(fmt.Sprintf(`
 		SELECT COUNT(*),
-		       COUNT(*) FILTER (WHERE si.min_stock > 0 AND sl.qty_base < si.min_stock),
+		       COUNT(*) FILTER (WHERE %s > 0 AND sl.qty_base < %s),
 		       COALESCE(SUM(sl.qty_base * sl.avg_cost), 0)
 		FROM stock_ledger sl
 		JOIN stock_items si ON si.id = sl.item_id
-		JOIN warehouses w ON w.id = sl.warehouse_id %s`, where), args...).Scan(&resp.Total, &resp.LowStockCount, &resp.TotalAssetValue)
+		JOIN warehouses w ON w.id = sl.warehouse_id %s`, effMinStock, effMinStock, where), args...).Scan(&resp.Total, &resp.LowStockCount, &resp.TotalAssetValue)
 	if err != nil {
 		return nil, err
 	}
@@ -660,13 +671,13 @@ func GetStockLedger(warehouseID, itemID, search string, lowStockOnly bool, outle
 		       ROUND(sl.qty_base / NULLIF(si.dist_ratio, 0)::numeric, 4)::float8 AS qty_dist,
 		       sl.avg_cost,
 		       ROUND(sl.qty_base * sl.avg_cost, 2)::float8 AS stock_value,
-		       si.min_stock,
-		       (si.min_stock > 0 AND sl.qty_base < si.min_stock) AS is_low
+		       %s AS min_stock,
+		       (%s > 0 AND sl.qty_base < %s) AS is_low
 		FROM stock_ledger sl
 		JOIN stock_items si ON si.id = sl.item_id
 		JOIN warehouses w ON w.id = sl.warehouse_id
 		%s ORDER BY w.type, si.name LIMIT $%d OFFSET $%d
-	`, where, i, i+1), args...)
+	`, effMinStock, effMinStock, effMinStock, where, i, i+1), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -700,13 +711,15 @@ func GetStockMovements(warehouseID, itemID string, dateFrom, dateTo string, outl
 		args = append(args, itemID)
 		i++
 	}
+	// Batas hari mengikuti timezone aplikasi (kolom tersimpan UTC); tz_day_start
+	// dipakai sebagai konstanta di sisi kanan agar index created_at tetap terpakai.
 	if dateFrom != "" {
-		where += fmt.Sprintf(" AND sm.created_at::date >= $%d", i)
+		where += fmt.Sprintf(" AND sm.created_at >= tz_day_start($%d::date)", i)
 		args = append(args, dateFrom)
 		i++
 	}
 	if dateTo != "" {
-		where += fmt.Sprintf(" AND sm.created_at::date <= $%d", i)
+		where += fmt.Sprintf(" AND sm.created_at < tz_day_start($%d::date + 1)", i)
 		args = append(args, dateTo)
 		i++
 	}
@@ -802,11 +815,14 @@ func applyMovement(tx *sql.Tx, itemID, warehouseID, movType, unitUsed, refID, re
 		totalDeductedCost := 0.0
 		remainingToDeduct := absQty
 
+		// FEFO: batch ber-expiry terdekat dipotong lebih dulu (batch tanpa expiry
+		// paling akhir), baru urut umur — expiry dicatat per batch dan dimonitor
+		// PPIC, jadi konsumsi harus mengikutinya. Tie-break id (ULID ~ waktu).
 		rows, err := tx.Query(`
-			SELECT id, qty_base, cost_per_base 
-			FROM stock_batches 
-			WHERE item_id=$1 AND warehouse_id=$2 AND qty_base > 0 
-			ORDER BY created_at ASC`, itemID, warehouseID)
+			SELECT id, qty_base, cost_per_base
+			FROM stock_batches
+			WHERE item_id=$1 AND warehouse_id=$2 AND qty_base > 0
+			ORDER BY (expiry_date IS NULL), expiry_date ASC, created_at ASC, id ASC`, itemID, warehouseID)
 		if err != nil {
 			return err
 		}
@@ -1021,14 +1037,76 @@ func DeductStockByRecipe(outletID string, productLocalID string, qtySold float64
 	return tx.Commit()
 }
 
+// RetryFailedStockDeductions mencoba ulang deduksi stok penjualan yang gagal
+// (tercatat di stock_deduction_failures, mis. karena batch FIFO habis saat sync).
+// Dipanggil berkala oleh scheduler; berhenti mencoba setelah 20 attempt agar
+// baris bermasalah permanen tidak di-loop selamanya (tetap terlihat di tabel).
+func RetryFailedStockDeductions() {
+	rows, err := database.DB.Query(`
+		SELECT id, outlet_id, transaction_id, product_local_id, qty
+		FROM stock_deduction_failures
+		WHERE status = 'pending' AND attempts < 20
+		ORDER BY created_at ASC LIMIT 100`)
+	if err != nil {
+		return
+	}
+	type failRow struct {
+		id, outletID, txID, productID string
+		qty                           float64
+	}
+	var fails []failRow
+	for rows.Next() {
+		var f failRow
+		if err := rows.Scan(&f.id, &f.outletID, &f.txID, &f.productID, &f.qty); err == nil {
+			fails = append(fails, f)
+		}
+	}
+	rows.Close()
+
+	resolved := 0
+	for _, f := range fails {
+		if derr := DeductStockByRecipe(f.outletID, f.productID, f.qty, f.txID, f.txID); derr != nil {
+			database.DB.Exec(`
+				UPDATE stock_deduction_failures
+				SET attempts = attempts + 1, last_error = $2, last_attempt_at = NOW() AT TIME ZONE 'UTC'
+				WHERE id = $1`, f.id, derr.Error())
+		} else {
+			database.DB.Exec(`
+				UPDATE stock_deduction_failures
+				SET status = 'resolved', attempts = attempts + 1, last_attempt_at = NOW() AT TIME ZONE 'UTC'
+				WHERE id = $1`, f.id)
+			resolved++
+		}
+	}
+	if resolved > 0 {
+		log.Printf("[stock] retry deduksi: %d dari %d antrian berhasil", resolved, len(fails))
+	}
+}
+
 // ── Stock Transfers ───────────────────────────────────────────
 
-func generateTransferNumber() string {
-	t := time.Now()
+// nextDocNumber menghasilkan nomor dokumen berurutan "<prefix><seq>" secara aman
+// terhadap request bersamaan: advisory lock per-prefix menserialisasi pembacaan
+// MAX (COUNT(*)+1 lama bisa bentrok dengan unique constraint saat dua dokumen
+// dibuat berbarengan). Lock lepas otomatis saat tx commit/rollback.
+func nextDocNumber(tx *sql.Tx, table, column, prefix string) (int, error) {
+	if _, err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtext($1))`, "docnum:"+table); err != nil {
+		return 0, err
+	}
 	var seq int
-	prefix := fmt.Sprintf("TRF%s", t.Format("060102"))
-	database.DB.QueryRow(`SELECT COUNT(*)+1 FROM stock_transfers WHERE transfer_number LIKE $1`, prefix+"%").Scan(&seq)
-	return fmt.Sprintf("%s%03d", prefix, seq)
+	err := tx.QueryRow(fmt.Sprintf(
+		`SELECT COALESCE(MAX(CAST(SUBSTRING(%s FROM '^' || $1 || '(\d+)$') AS INT)), 0) + 1
+		 FROM %s WHERE %s LIKE $1 || '%%'`, column, table, column), prefix).Scan(&seq)
+	return seq, err
+}
+
+func generateTransferNumber(tx *sql.Tx) (string, error) {
+	prefix := fmt.Sprintf("TRF%s", time.Now().In(GetTimezoneLocation()).Format("060102"))
+	seq, err := nextDocNumber(tx, "stock_transfers", "transfer_number", prefix)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s%03d", prefix, seq), nil
 }
 
 func ListStockTransfers(status, warehouseID string, outletIDs []string, page, limit int) ([]models.StockTransfer, int, error) {
@@ -1179,13 +1257,16 @@ func CreateStockTransfer(req models.StockTransferRequest, createdBy string) (*mo
 	}
 
 	id := NewULID()
-	num := generateTransferNumber()
 	tx, err := database.DB.Begin()
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback()
 
+	num, err := generateTransferNumber(tx)
+	if err != nil {
+		return nil, err
+	}
 	_, err = tx.Exec(`
 		INSERT INTO stock_transfers (id, transfer_number, from_warehouse_id, to_warehouse_id, status, notes, created_by)
 		VALUES ($1,$2,$3,$4,'draft',$5,$6)`,
@@ -1353,6 +1434,32 @@ func UpdateTransferStatus(id, newStatus, actor string) (*models.StockTransfer, e
 					return nil, fmt.Errorf("qty diterima untuk %s tidak boleh melebihi qty dikirim", it.ItemName)
 				}
 			}
+
+			// Selisih kirim vs terima: stok sudah terpotong penuh di gudang asal saat
+			// "sent", jadi kekurangannya dicatat sebagai waste 'lost' (dokumen, tanpa
+			// movement tambahan) supaya penyusutan terlihat di laporan — sebelumnya
+			// selisih ini hilang tanpa jejak.
+			if shortfall := it.QtyBase - recvQty; shortfall > 0.0001 {
+				ratio := it.DistRatio
+				if ratio <= 0 {
+					ratio = 1
+				}
+				wasteNum, werr := generateWasteNumber(tx)
+				if werr != nil {
+					return nil, werr
+				}
+				if _, werr := tx.Exec(`
+					INSERT INTO stock_wastes (id, waste_number, warehouse_id, item_id, qty_base, qty_dist,
+						unit_used, cost_per_base, total_cost, reason, notes, created_by)
+					VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'lost',$10,$11)`,
+					NewULID(), wasteNum, transfer.FromWarehouseID, it.ItemID, shortfall, shortfall/ratio,
+					it.DistUnit, avgCost, avgCost*shortfall,
+					fmt.Sprintf("Selisih transfer %s: dikirim %.2f, diterima %.2f", transfer.TransferNumber, it.QtyBase, recvQty),
+					actor); werr != nil {
+					return nil, fmt.Errorf("gagal catat selisih %s: %w", it.ItemName, werr)
+				}
+			}
+
 			if recvQty == 0 {
 				continue
 			}
@@ -1682,12 +1789,13 @@ func ProduceStockItem(req models.ProduceRequest, createdBy string) error {
 
 // ── Stock Waste ───────────────────────────────────────────
 
-func generateWasteNumber() string {
-	now := time.Now()
-	prefix := "WST-" + now.Format("20060102") + "-"
-	var seq int
-	database.DB.QueryRow(`SELECT COUNT(*)+1 FROM stock_wastes WHERE waste_number LIKE $1`, prefix+"%").Scan(&seq)
-	return fmt.Sprintf("%s%04d", prefix, seq)
+func generateWasteNumber(tx *sql.Tx) (string, error) {
+	prefix := "WST-" + time.Now().In(GetTimezoneLocation()).Format("20060102") + "-"
+	seq, err := nextDocNumber(tx, "stock_wastes", "waste_number", prefix)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s%04d", prefix, seq), nil
 }
 
 func GetStockWastes(warehouseID, search, dateFrom, dateTo string, outletIDs []string, page, limit int) ([]models.StockWaste, int, error) {
@@ -1705,14 +1813,15 @@ func GetStockWastes(warehouseID, search, dateFrom, dateTo string, outletIDs []st
 		args = append(args, "%"+search+"%", "%"+search+"%", "%"+search+"%")
 		i += 3
 	}
+	// Batas hari mengikuti timezone aplikasi (kolom tersimpan UTC).
 	if dateFrom != "" {
-		where += fmt.Sprintf(" AND sw.created_at >= $%d", i)
-		args = append(args, dateFrom+" 00:00:00")
+		where += fmt.Sprintf(" AND sw.created_at >= tz_day_start($%d::date)", i)
+		args = append(args, dateFrom)
 		i++
 	}
 	if dateTo != "" {
-		where += fmt.Sprintf(" AND sw.created_at <= $%d", i)
-		args = append(args, dateTo+" 23:59:59")
+		where += fmt.Sprintf(" AND sw.created_at < tz_day_start($%d::date + 1)", i)
+		args = append(args, dateTo)
 		i++
 	}
 	if outletIDs != nil {
@@ -1781,7 +1890,10 @@ func CreateStockWaste(req models.StockWasteRequest, actor string) error {
 
 	qtyBase := req.QtyDist * item.DistRatio
 	wasteID := NewULID()
-	wasteNum := generateWasteNumber()
+	wasteNum, err := generateWasteNumber(tx)
+	if err != nil {
+		return err
+	}
 
 	// 1. Apply Movement (deduct stock)
 	movType := "waste"
@@ -1865,13 +1977,13 @@ func GetWarehouseDashboard(outletIDs []string) (*models.WarehouseDashboardStats,
 	run(fmt.Sprintf(`
 		SELECT
 			COUNT(DISTINCT CASE WHEN sl.qty_base > 0 THEN sl.item_id END),
-			COUNT(DISTINCT CASE WHEN sl.qty_base <= si.min_stock AND si.min_stock > 0 AND sl.qty_base >= 0 THEN sl.item_id END),
+			COUNT(DISTINCT CASE WHEN sl.qty_base <= %s AND %s > 0 AND sl.qty_base >= 0 THEN sl.item_id END),
 			COUNT(DISTINCT CASE WHEN sl.qty_base <= 0 THEN sl.item_id END),
 			COALESCE(SUM(CASE WHEN sl.qty_base > 0 THEN sl.qty_base * sl.avg_cost ELSE 0 END), 0)
 		FROM stock_ledger sl
 		JOIN stock_items si ON si.id = sl.item_id
 		JOIN warehouses w ON w.id = sl.warehouse_id
-		WHERE w.is_active = true%s`, wFilter), wArgs,
+		WHERE w.is_active = true%s`, effMinStock, effMinStock, wFilter), wArgs,
 		&stats.ItemsWithStock, &stats.LowStockCount, &stats.OutOfStockCount, &stats.TotalStockValue)
 
 	// ── 4. Transfer pending ──────────────────────────────────
@@ -1883,9 +1995,11 @@ func GetWarehouseDashboard(outletIDs []string) (*models.WarehouseDashboardStats,
 		oFilter, oFilter), wArgs, &stats.PendingTransfers)
 
 	// ── 5. Pergerakan hari ini dan 7 hari ───────────────────
+	// tz_date/tz_today: kolom tersimpan UTC; `created_at AT TIME ZONE 'Asia/Jakarta'`
+	// polos arah konversinya terbalik (geser -7 jam, bukan +7).
 	run(fmt.Sprintf(`
 		SELECT
-			COUNT(CASE WHEN DATE(sm.created_at AT TIME ZONE 'Asia/Jakarta') = CURRENT_DATE THEN 1 END),
+			COUNT(CASE WHEN tz_date(sm.created_at) = tz_today() THEN 1 END),
 			COUNT(CASE WHEN sm.created_at >= NOW() - INTERVAL '7 days' THEN 1 END)
 		FROM stock_movements sm
 		JOIN warehouses w ON w.id = sm.warehouse_id
@@ -1897,7 +2011,7 @@ func GetWarehouseDashboard(outletIDs []string) (*models.WarehouseDashboardStats,
 		SELECT w.id, w.name, w.type, COALESCE(o.name,'—'),
 			COUNT(DISTINCT CASE WHEN sl.qty_base > 0 THEN sl.item_id END),
 			COALESCE(SUM(CASE WHEN sl.qty_base > 0 THEN sl.qty_base * sl.avg_cost ELSE 0 END), 0),
-			COUNT(DISTINCT CASE WHEN sl.qty_base <= si.min_stock AND si.min_stock > 0 AND sl.qty_base >= 0 THEN sl.item_id END)
+			COUNT(DISTINCT CASE WHEN sl.qty_base <= %s AND %s > 0 AND sl.qty_base >= 0 THEN sl.item_id END)
 		FROM warehouses w
 		LEFT JOIN outlets o ON o.id = w.outlet_id
 		LEFT JOIN stock_ledger sl ON sl.warehouse_id = w.id
@@ -1905,7 +2019,7 @@ func GetWarehouseDashboard(outletIDs []string) (*models.WarehouseDashboardStats,
 		WHERE w.is_active = true%s
 		GROUP BY w.id, w.name, w.type, o.name
 		ORDER BY w.type DESC, SUM(COALESCE(CASE WHEN sl.qty_base > 0 THEN sl.qty_base * sl.avg_cost ELSE 0 END, 0)) DESC`,
-		wFilter)
+		effMinStock, effMinStock, wFilter)
 	stats.WarehouseStocks = []models.WarehouseStockSummary{}
 	wsRows, wsErr := func() (*sql.Rows, error) {
 		if wArgs != nil {
@@ -1930,12 +2044,12 @@ func GetWarehouseDashboard(outletIDs []string) (*models.WarehouseDashboardStats,
 			w.id, w.name, w.type,
 			sl.qty_base,
 			ROUND(CASE WHEN si.dist_ratio > 0 THEN sl.qty_base / si.dist_ratio ELSE sl.qty_base END, 4),
-			sl.avg_cost, sl.qty_base * sl.avg_cost, si.min_stock, true
+			sl.avg_cost, sl.qty_base * sl.avg_cost, %s, true
 		FROM stock_ledger sl
 		JOIN stock_items si ON si.id = sl.item_id
 		JOIN warehouses w ON w.id = sl.warehouse_id
-		WHERE w.is_active = true AND si.min_stock > 0 AND sl.qty_base <= si.min_stock%s
-		ORDER BY sl.qty_base ASC LIMIT 10`, wFilter)
+		WHERE w.is_active = true AND %s > 0 AND sl.qty_base <= %s%s
+		ORDER BY sl.qty_base ASC LIMIT 10`, effMinStock, effMinStock, effMinStock, wFilter)
 	stats.LowStockItems = []models.StockLedgerRow{}
 	lsRows, lsErr := func() (*sql.Rows, error) {
 		if wArgs != nil {
@@ -2001,9 +2115,9 @@ func GetWarehouseDashboard(outletIDs []string) (*models.WarehouseDashboardStats,
 		SELECT TO_CHAR(d.dt, 'YYYY-MM-DD'),
 			COUNT(CASE WHEN sm.qty_base > 0 THEN 1 END)::int,
 			COUNT(CASE WHEN sm.qty_base < 0 THEN 1 END)::int
-		FROM generate_series(CURRENT_DATE - 13, CURRENT_DATE, '1 day'::interval) d(dt)
+		FROM generate_series(tz_today() - 13, tz_today(), '1 day'::interval) d(dt)
 		LEFT JOIN stock_movements sm
-			ON DATE(sm.created_at AT TIME ZONE 'Asia/Jakarta') = d.dt
+			ON tz_date(sm.created_at) = d.dt
 			AND sm.warehouse_id IN (%s)
 		GROUP BY d.dt ORDER BY d.dt`, whSubQ)
 	stats.MovementTrend = []models.DailyMovementPoint{}

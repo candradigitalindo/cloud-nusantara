@@ -276,6 +276,22 @@ func SaveTransaction(outletID string, req models.PushTransactionRequest) (string
 	// transaksi tetap commit — selisih stok lebih baik daripada transaksi gagal sync).
 	// Catatan: saat ini akan no-op untuk item tanpa product_id (app outlet belum
 	// mengirim local_id produk di payload transaksi — lihat memory project_cloud_pos_overview).
+	//
+	// Idempotensi: upsert di atas berarti push ulang (retry outbox / respons hilang)
+	// tetap sampai ke sini untuk transaksi yang sama. Tanpa guard ini stok resep
+	// terpotong dobel setiap re-sync.
+	var stockAlreadyDeducted bool
+	if err := database.DB.QueryRow(
+		`SELECT EXISTS(SELECT 1 FROM stock_movements WHERE ref_type='transaction' AND ref_id=$1)`,
+		cloudID,
+	).Scan(&stockAlreadyDeducted); err != nil {
+		// Gagal cek = jangan deduct (lebih aman kurang potong sekali daripada dobel).
+		log.Printf("cek idempotensi deduksi stok (tx=%s): %v", cloudID, err)
+		stockAlreadyDeducted = true
+	}
+	if stockAlreadyDeducted {
+		return cloudID, nil
+	}
 	for _, item := range req.Items {
 		if item.ProductID == "" || item.Quantity <= 0 {
 			continue
@@ -283,6 +299,16 @@ func SaveTransaction(outletID string, req models.PushTransactionRequest) (string
 		if derr := DeductStockByRecipe(outletID, item.ProductID, float64(item.Quantity), cloudID, req.LocalID); derr != nil {
 			log.Printf("DeductStockByRecipe gagal (outlet=%s produk=%s transaksi=%s): %v", outletID, item.ProductID, cloudID, derr)
 			go logSync(outletID, "deduct_stock", "stock_movement", 1, "failed", derr.Error())
+			// Catat ke antrian retry agar selisih stok tidak menumpuk diam-diam;
+			// scheduler mencoba ulang berkala (RetryFailedStockDeductions).
+			if _, ierr := database.DB.Exec(`
+				INSERT INTO stock_deduction_failures (id, outlet_id, transaction_id, product_local_id, qty, last_error)
+				VALUES ($1,$2,$3,$4,$5,$6)
+				ON CONFLICT (transaction_id, product_local_id)
+				DO UPDATE SET last_error = EXCLUDED.last_error, qty = EXCLUDED.qty`,
+				NewULID(), outletID, cloudID, item.ProductID, float64(item.Quantity), derr.Error()); ierr != nil {
+				log.Printf("catat stock_deduction_failure (tx=%s): %v", cloudID, ierr)
+			}
 		}
 	}
 

@@ -32,7 +32,7 @@ export const stockLedgerApi = {
   list: (params = {}) => api.get('/admin/stock-ledger', { params }),
   movements: (params = {}) => api.get('/admin/stock-movements', { params }),
   adjust: (data) => api.post('/admin/stock-adjustments', data),
-  produce: (data) => api.post('/admin/stock-produce', data),
+  produce: (data) => api.post(`/admin/stock-items/${data.item_id}/produce`, data),
 }
 
 // ── Penerimaan Barang (Goods Receipt / GRN) ───────────────────

@@ -297,12 +297,25 @@ func ApproveStockOpname(id, actor string) error {
 	}
 	defer tx.Rollback()
 
+	// Kunci sesi & validasi ulang status di dalam transaksi: cek di atas berjalan
+	// tanpa lock, dua approve bersamaan bisa sama-sama lolos dan memposting
+	// penyesuaian dua kali.
+	var curStatus string
+	if err := tx.QueryRow(`SELECT status FROM stock_opnames WHERE id = $1 FOR UPDATE`, id).Scan(&curStatus); err != nil {
+		return err
+	}
+	if curStatus != "review" {
+		return fmt.Errorf("hanya sesi berstatus review yang bisa di-approve")
+	}
+
 	for _, it := range so.Items {
 		if it.QtyCountedBase == nil {
 			continue
 		}
+		// FOR UPDATE: selisih dihitung dari qty yang terkunci sampai commit, agar
+		// semantik "setel ke qty fisik" tidak digeser movement lain di sela-sela.
 		var curQty float64
-		if err := tx.QueryRow(`SELECT COALESCE(qty_base, 0) FROM stock_ledger WHERE item_id = $1 AND warehouse_id = $2`,
+		if err := tx.QueryRow(`SELECT COALESCE(qty_base, 0) FROM stock_ledger WHERE item_id = $1 AND warehouse_id = $2 FOR UPDATE`,
 			it.ItemID, so.WarehouseID).Scan(&curQty); err != nil && err != sql.ErrNoRows {
 			return err
 		}

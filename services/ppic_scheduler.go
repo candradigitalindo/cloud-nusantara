@@ -13,10 +13,14 @@ import (
 func StartPpicScheduler() {
 	go func() {
 		evaluatePpicAlerts()
+		RetryFailedStockDeductions()
 		lastRunDay := ""
 		ticker := time.NewTicker(30 * time.Minute)
 		defer ticker.Stop()
 		for range ticker.C {
+			// Tiap tick: coba ulang deduksi stok penjualan yang tadi gagal
+			// (stok mungkin sudah diisi lewat GRN/transfer/produksi).
+			RetryFailedStockDeductions()
 			loc := GetTimezoneLocation()
 			now := time.Now().In(loc)
 			day := now.Format("2006-01-02")

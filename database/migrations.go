@@ -1658,6 +1658,24 @@ func RunMigrations() error {
 		`CREATE INDEX IF NOT EXISTS idx_stock_opnames_wh ON stock_opnames(warehouse_id, created_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_stock_movements_wh_created ON stock_movements(warehouse_id, created_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_stock_movements_item_wh_created ON stock_movements(item_id, warehouse_id, created_at)`,
+		// Guard idempotensi deduksi stok penjualan: lookup EXISTS per (ref_type, ref_id).
+		`CREATE INDEX IF NOT EXISTS idx_stock_movements_ref_id ON stock_movements(ref_type, ref_id) WHERE ref_id IS NOT NULL`,
+		// Antrian deduksi stok penjualan yang gagal (mis. stok FIFO habis): dicatat
+		// agar terlihat & bisa di-retry otomatis oleh scheduler, tidak cuma di log.
+		`CREATE TABLE IF NOT EXISTS stock_deduction_failures (
+			id CHAR(26) PRIMARY KEY,
+			outlet_id CHAR(26) NOT NULL,
+			transaction_id VARCHAR(50) NOT NULL,
+			product_local_id VARCHAR(100) NOT NULL,
+			qty DECIMAL(15,4) NOT NULL,
+			last_error TEXT DEFAULT '',
+			attempts INT NOT NULL DEFAULT 0,
+			status VARCHAR(20) NOT NULL DEFAULT 'pending',
+			created_at TIMESTAMP DEFAULT (now() AT TIME ZONE 'UTC'),
+			last_attempt_at TIMESTAMP,
+			UNIQUE(transaction_id, product_local_id)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_sdf_pending ON stock_deduction_failures(status, created_at) WHERE status = 'pending'`,
 	}
 	for _, m := range ppicMigrations {
 		if _, err := DB.Exec(m); err != nil {

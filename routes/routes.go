@@ -312,7 +312,7 @@ func Setup(app *fiber.App, cfg *config.Config) {
 	admin.Get("/stock-transfers/:id", middleware.RequirePermission("stocktransfers.view"), handlers.GetStockTransfer)
 	admin.Post("/stock-transfers", middleware.RequirePermission("stocktransfers.create"), handlers.CreateStockTransfer)
 	admin.Put("/stock-transfers/:id/status", middleware.RequirePermission("stocktransfers.update"), handlers.UpdateTransferStatus)
-	admin.Put("/stock-transfers/:id/received", middleware.RequirePermission("stocktransfers.update"), handlers.UpdateReceivedQty)
+	admin.Put("/stock-transfers/:id/items/:itemId/received", middleware.RequirePermission("stocktransfers.update"), handlers.UpdateReceivedQty)
 
 	// Recipes
 	admin.Get("/products/:id/recipes", middleware.RequirePermission("recipes.view"), handlers.GetProductRecipes)

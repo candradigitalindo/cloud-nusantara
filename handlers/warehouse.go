@@ -44,6 +44,10 @@ func CreateStockItem(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(models.APIResponse{Error: "body tidak valid"})
 	}
+	// Konteks per-gudang (min-stock / stok awal) hanya untuk gudang dalam scope user.
+	if req.WarehouseID != "" && !services.WarehouseMutableInScope(req.WarehouseID, getOutletScope(c)) {
+		return c.Status(403).JSON(models.APIResponse{Error: "Akses gudang tidak diizinkan"})
+	}
 	actor, _ := c.Locals("admin_username").(string)
 	item, err := services.CreateStockItem(req, actor)
 	if err != nil {
@@ -57,6 +61,10 @@ func UpdateStockItem(c *fiber.Ctx) error {
 	var req models.StockItemRequest
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(models.APIResponse{Error: "body tidak valid"})
+	}
+	// Konteks per-gudang (min-stock / set_stock) hanya untuk gudang dalam scope user.
+	if req.WarehouseID != "" && !services.WarehouseMutableInScope(req.WarehouseID, getOutletScope(c)) {
+		return c.Status(403).JSON(models.APIResponse{Error: "Akses gudang tidak diizinkan"})
 	}
 	actor, _ := c.Locals("admin_username").(string)
 	item, err := services.UpdateStockItem(c.Params("id"), req, actor)
@@ -396,6 +404,11 @@ func ProduceStockItem(c *fiber.Ctx) error {
 	var req models.ProduceRequest
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(models.APIResponse{Error: "body tidak valid"})
+	}
+	// Item yang diproduksi mengikuti path (/stock-items/:id/produce), bukan body.
+	req.ItemID = c.Params("id")
+	if !services.WarehouseMutableInScope(req.WarehouseID, getOutletScope(c)) {
+		return c.Status(403).JSON(models.APIResponse{Error: "Akses gudang tidak diizinkan"})
 	}
 	actor, _ := c.Locals("admin_username").(string)
 	if err := services.ProduceStockItem(req, actor); err != nil {

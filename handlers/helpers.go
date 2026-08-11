@@ -57,8 +57,10 @@ func getPagination(c *fiber.Ctx) (int, int) {
 	if limit < 1 {
 		limit = 20
 	}
-	if limit > 100 {
-		limit = 100
+	// Batas atas 1000: picker admin (item stok, gudang) memuat sampai ratusan
+	// baris sekaligus; clamp 100 sebelumnya diam-diam memotong isi dropdown.
+	if limit > 1000 {
+		limit = 1000
 	}
 
 	return page, limit

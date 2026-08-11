@@ -5,7 +5,9 @@
         <h1 class="text-xl font-bold text-gray-900">Penerimaan Barang</h1>
         <p class="text-sm text-gray-500 mt-0.5">Catat stok masuk ke gudang (pembelian, stok awal, kiriman supplier).</p>
       </div>
-      <AppButton @click="openForm">+ Terima Barang</AppButton>
+      <!-- Backend mensyaratkan stockledger.adjust untuk membuat GRN; user view-only
+           tidak perlu melihat tombol yang pasti gagal saat submit. -->
+      <AppButton v-if="canCreate" @click="openForm">+ Terima Barang</AppButton>
     </div>
 
     <AppAlert type="error" :message="errorMsg" />
@@ -14,7 +16,7 @@
     <AppCard :padding="false">
       <div class="flex items-center gap-3 px-4 py-3 border-b border-gray-100 flex-wrap">
         <SearchSelect v-model="filterWarehouse" :options="warehouseFilterOptions" placeholder="Semua gudang"
-          searchPlaceholder="Cari gudang…" @change="load" />
+          searchPlaceholder="Cari gudang…" valueKey="value" labelKey="label" @change="onFilterChange" />
       </div>
 
       <div v-if="loading" class="p-8 text-center text-sm text-gray-400">Memuat…</div>
@@ -54,7 +56,7 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label class="lbl">Gudang tujuan *</label>
-            <SearchSelect v-model="form.warehouse_id" :options="warehouseOptions" placeholder="Pilih gudang" searchPlaceholder="Cari gudang…" />
+            <SearchSelect v-model="form.warehouse_id" :options="warehouseOptions" placeholder="Pilih gudang" searchPlaceholder="Cari gudang…" valueKey="value" labelKey="label" />
           </div>
           <div>
             <label class="lbl">Vendor / Supplier</label>
@@ -79,7 +81,7 @@
           <div v-for="(ln, i) in form.items" :key="i" class="p-3 border-t border-gray-100 grid grid-cols-12 gap-2 items-end">
             <div class="col-span-12 sm:col-span-4">
               <label class="lbl">Item stok</label>
-              <SearchSelect v-model="ln.item_id" :options="itemOptions" placeholder="Pilih item" searchPlaceholder="Cari item…" @change="onItemPick(ln)" />
+              <SearchSelect v-model="ln.item_id" :options="itemOptions" placeholder="Pilih item" searchPlaceholder="Cari item…" valueKey="value" labelKey="label" @change="onItemPick(ln)" />
             </div>
             <div class="col-span-4 sm:col-span-2">
               <label class="lbl">Qty ({{ unitOf(ln.item_id) }})</label>
@@ -152,8 +154,11 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppPagination from '@/components/ui/AppPagination.vue'
 import SearchSelect from '@/components/ui/SearchSelect.vue'
 import { useToastStore } from '@/stores/toast.js'
+import { useAuthStore } from '@/stores/auth.js'
 
 const toast = useToastStore()
+const auth = useAuthStore()
+const canCreate = auth.hasPermission('stockledger.adjust')
 const receipts = ref([])
 const warehouses = ref([])
 const items = ref([])
@@ -216,7 +221,7 @@ async function submit() {
       })),
     }
     const d = await goodsReceiptsApi.create(payload)
-    toast.success(`Penerimaan ${d?.data?.grn_number || ''} tersimpan`)
+    toast.success(`Penerimaan ${d?.grn_number || d?.data?.grn_number || ''} tersimpan`)
     formOpen.value = false
     page.value = 1
     await load()
@@ -234,6 +239,12 @@ async function load() {
   finally { loading.value = false }
 }
 watch(page, load)
+
+// Ganti filter selalu mulai dari halaman 1; watch(page) yang memanggil load.
+function onFilterChange() {
+  if (page.value === 1) load()
+  else page.value = 1
+}
 
 function fmtDateTime(s) {
   if (!s) return '—'

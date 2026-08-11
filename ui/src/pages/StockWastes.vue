@@ -18,7 +18,7 @@
             v-model="filters.warehouse_id"
             :options="warehouseOptions"
             placeholder="Semua Gudang"
-            @change="load"
+            @change="resetAndLoad"
           />
         </div>
         <DateRangePicker v-model="range" clearable />
@@ -188,7 +188,7 @@ const filters = reactive({
   date_to: '',
 })
 const range = ref({ from: '', to: '', label: 'Semua Tanggal' })
-watch(range, (r) => { filters.date_from = r.from; filters.date_to = r.to; load() })
+watch(range, (r) => { filters.date_from = r.from; filters.date_to = r.to; resetAndLoad() })
 
 const warehouseOptions = ref([{ id: '', name: 'Semua Gudang' }])
 
@@ -214,7 +214,9 @@ const unitOptions = computed(() => {
   return units
 })
 
+let loadSeq = 0
 const load = async () => {
+  const seq = ++loadSeq
   loading.value = true
   try {
     const res = await getWastes({
@@ -222,6 +224,7 @@ const load = async () => {
       page: page.value,
       limit: 20
     })
+    if (seq !== loadSeq) return // respons lama, sudah ada request lebih baru
     rows.value = res.data || []
     total.value = res.total || 0
     totalPages.value = res.totalPages || res.total_pages || 1
@@ -233,10 +236,10 @@ const load = async () => {
   }
 }
 
-const debouncedLoad = debounce(() => {
-  page.value = 1
-  load()
-}, 500)
+// Ganti filter selalu mulai dari halaman 1 (halaman ini tanpa watch(page)).
+const resetAndLoad = () => { page.value = 1; load() }
+
+const debouncedLoad = debounce(resetAndLoad, 500)
 
 const changePage = (p) => {
   page.value = p
@@ -246,7 +249,7 @@ const changePage = (p) => {
 const fetchMetadata = async () => {
   try {
     const [whRes, itemRes] = await Promise.all([
-      warehousesApi.list(),
+      warehousesApi.list({ limit: 500 }),
       stockItemsApi.list({ limit: 1000, active_only: true })
     ])
     
@@ -257,10 +260,12 @@ const fetchMetadata = async () => {
     ]
 
     const itemList = Array.isArray(itemRes) ? itemRes : (itemRes?.data || [])
+    // ...i dulu supaya label gabungan "nama (kode)" tidak tertimpa nama polos —
+    // pencarian per kode di picker bergantung pada label ini.
     itemOptions.value = itemList.map(i => ({
+      ...i,
       id: i.id,
-      name: `${i.name} (${i.code})`,
-      ...i
+      name: `${i.name} (${i.code})`
     }))
 
   } catch (err) {

@@ -262,6 +262,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { apiClient } from '@/api/client.js'
+import { movementLabel, transferStatusLabel } from '@/utils/warehouse.js'
 import AppAlert   from '@/components/ui/AppAlert.vue'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
 
@@ -307,20 +308,14 @@ function fmtDateTime(s) {
   return new Date(s).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
 }
 
-const STATUS_LABELS = { draft: 'Draft', approved: 'Disetujui', sent: 'Dikirim', received: 'Diterima', cancelled: 'Dibatalkan' }
-const STATUS_CLASS  = { draft: 'st-gray', approved: 'st-blue', sent: 'st-amber', received: 'st-green', cancelled: 'st-red' }
-function statusLabel(s) { return STATUS_LABELS[s] ?? s }
+// Label dari util bersama; kelas badge tetap lokal (pakai CSS scoped halaman ini).
+const STATUS_CLASS = { draft: 'st-gray', approved: 'st-blue', sent: 'st-amber', received: 'st-green', cancelled: 'st-red' }
+const statusLabel = transferStatusLabel
 function statusClass(s) { return STATUS_CLASS[s] ?? 'st-gray' }
 
-const MOV_LABELS = {
-  purchase_in: 'Pembelian', adjustment: 'Penyesuaian', waste: 'Buang',
-  spoiled: 'Rusak', expired: 'Kadaluarsa', return_in: 'Retur Masuk',
-  transfer_in: 'Transfer Masuk', transfer_out: 'Transfer Keluar',
-  sale: 'Penjualan', production_out: 'Produksi Keluar', production_in: 'Produksi Masuk',
-}
 const MOV_IN  = new Set(['purchase_in','return_in','transfer_in','production_in','adjustment'])
 const MOV_OUT = new Set(['sale','waste','spoiled','expired','transfer_out','production_out'])
-function movLabel(t) { return MOV_LABELS[t] ?? t }
+const movLabel = movementLabel
 function movClass(t) {
   if (MOV_IN.has(t))  return 'mov-in'
   if (MOV_OUT.has(t)) return 'mov-out'

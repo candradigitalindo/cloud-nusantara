@@ -129,9 +129,9 @@ func GetPpicDashboard(outletIDs []string) (*models.PpicDashboardStats, error) {
 		SELECT TO_CHAR(d.dt, 'YYYY-MM-DD'),
 			COALESCE(SUM(CASE WHEN sm.qty_base > 0 THEN sm.qty_base * sm.cost_per_base END), 0),
 			COALESCE(SUM(CASE WHEN sm.qty_base < 0 THEN -sm.qty_base * sm.cost_per_base END), 0)
-		FROM generate_series(CURRENT_DATE - 29, CURRENT_DATE, '1 day'::interval) d(dt)
+		FROM generate_series(tz_today() - 29, tz_today(), '1 day'::interval) d(dt)
 		LEFT JOIN stock_movements sm
-			ON DATE(sm.created_at AT TIME ZONE 'Asia/Jakarta') = d.dt
+			ON tz_date(sm.created_at) = d.dt
 			AND sm.warehouse_id IN (%s)
 		GROUP BY d.dt ORDER BY d.dt`, whSub))
 	if utErr == nil {

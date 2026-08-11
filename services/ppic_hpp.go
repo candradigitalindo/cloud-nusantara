@@ -143,7 +143,13 @@ func GetPpicHppReport(outletID string, idealPct float64, outletScope []string) (
 		if len(ids) == 0 {
 			break
 		}
-		r, err := database.DB.Query(`SELECT id, name, base_unit, COALESCE(avg_cost, 0) FROM stock_items WHERE id = ANY($1)`, pq.Array(ids))
+		// avg_cost dari ledger (tertimbang lintas gudang) — kolom stock_items.avg_cost
+		// tidak pernah ditulis (selalu 0), jadi HPP WIP selalu jatuh ke costing teoretis.
+		r, err := database.DB.Query(`
+			SELECT si.id, si.name, si.base_unit,
+				(SELECT COALESCE(SUM(l.qty_base * l.avg_cost) / NULLIF(SUM(l.qty_base), 0), 0)
+				 FROM stock_ledger l WHERE l.item_id = si.id AND l.qty_base > 0)
+			FROM stock_items si WHERE si.id = ANY($1)`, pq.Array(ids))
 		if err != nil {
 			return nil, err
 		}

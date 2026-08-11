@@ -227,7 +227,7 @@ import AppInput      from '@/components/ui/AppInput.vue'
 import AppAlert      from '@/components/ui/AppAlert.vue'
 import AppPagination from '@/components/ui/AppPagination.vue'
 import SearchSelect  from '@/components/ui/SearchSelect.vue'
-import { describeWarehouse, formatWarehouseOptionLabel } from '@/utils/warehouse.js'
+import { describeWarehouse, formatWarehouseOptionLabel, TRANSFER_STATUS_LABELS, transferStatusClass } from '@/utils/warehouse.js'
 
 const toast = useToastStore()
 const loading = ref(false)
@@ -247,18 +247,13 @@ const showCreate = ref(false)
 const showDetail = ref(false)
 const detail = ref(null)
 
-const STATUSES = [
-  { value: 'draft',    label: 'Draft' },
-  { value: 'approved', label: 'Disetujui' },
-  { value: 'sent',     label: 'Dikirim' },
-  { value: 'received', label: 'Diterima' },
-  { value: 'cancelled', label: 'Dibatalkan' },
-]
+const STATUSES = ['draft', 'approved', 'sent', 'received', 'cancelled']
+  .map(v => ({ value: v, label: TRANSFER_STATUS_LABELS[v] }))
 const statusOptions = [
   { value: '', label: 'Semua Status' },
-  ...STATUSES.map(s => ({ value: s.value, label: s.label })),
+  ...STATUSES,
 ]
-const STATUS_LABELS = Object.fromEntries(STATUSES.map(s => [s.value, s.label]))
+const STATUS_LABELS = TRANSFER_STATUS_LABELS
 
 const NEXT_STATUS = { draft: 'approved', approved: 'sent', sent: 'received' }
 const NEXT_LABELS = { draft: 'Setujui Transfer', approved: 'Tandai Sudah Dikirim', sent: 'Konfirmasi Penerimaan' }
@@ -272,16 +267,7 @@ const COLUMNS = [
   { key: 'actions',         label: '',             sortable: false },
 ]
 
-function statusCls(s) {
-  const map = {
-    draft: 'bg-gray-100 text-gray-600',
-    approved: 'bg-blue-100 text-blue-700',
-    sent: 'bg-amber-100 text-amber-700',
-    received: 'bg-emerald-100 text-emerald-700',
-    cancelled: 'bg-red-100 text-red-600',
-  }
-  return map[s] || 'bg-gray-100 text-gray-600'
-}
+const statusCls = transferStatusClass
 
 const nextAction = computed(() => {
   if (!detail.value) return null
@@ -317,11 +303,14 @@ const toWarehouseOptions = computed(() =>
 const selectedFromWarehouse = computed(() => warehouseMap.value[form.value.from_warehouse_id] || null)
 const selectedToWarehouse = computed(() => warehouseMap.value[form.value.to_warehouse_id] || null)
 
+let loadSeq = 0
 async function load() {
+  const seq = ++loadSeq
   loading.value = true
   errorMsg.value = ''
   try {
     const data = await stockTransfersApi.list({ page: page.value, limit, status: filterStatus.value, warehouse_id: filterWarehouse.value })
+    if (seq !== loadSeq) return // respons lama, sudah ada request lebih baru
     transfers.value = data.data || []
     totalPages.value = data.total_pages || 1
   } catch (e) {
@@ -332,8 +321,9 @@ async function load() {
 }
 
 function applyFilters() {
-  page.value = 1
-  load()
+  // watch(page) yang memanggil load; hindari request ganda saat pindah ke hal. 1
+  if (page.value === 1) load()
+  else page.value = 1
 }
 
 async function loadWarehouses() {

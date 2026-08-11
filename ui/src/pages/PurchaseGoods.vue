@@ -588,7 +588,6 @@ import AppCard       from '@/components/ui/AppCard.vue'
 import AppTable      from '@/components/ui/AppTable.vue'
 import AppModal      from '@/components/ui/AppModal.vue'
 import AppInput      from '@/components/ui/AppInput.vue'
-import AppSelect     from '@/components/ui/AppSelect.vue'
 import AppAlert      from '@/components/ui/AppAlert.vue'
 import AppPagination from '@/components/ui/AppPagination.vue'
 import RupiahInput   from '@/components/ui/RupiahInput.vue'
@@ -616,14 +615,12 @@ const myWorkUnit = ref(null)
 const showCreate = ref(false)
 const creating = ref(false)
 const createError = ref('')
-const formErrors = ref({})
 const form = ref(emptyForm())
 
 const showDetail = ref(false)
 const detail = ref(null)
 const detailItems = ref([])
 const parentDetailId = ref(null)
-const selectedCount = computed(() => detailItems.value.filter(it => it.selected).length)
 const savingDetailQty = ref(false)
 const detailRejectMode = ref(false)
 const detailRejectReason = ref('')
@@ -813,7 +810,6 @@ function canDelete(s) {
   if (authStore.currentAdmin?.role === 'admin') return s !== 'paid'
   return ['pending', 'rejected', 'cancelled'].includes(s)
 }
-function canEditFinal(s) { return s === 'approved' }
 function emptyForm() {
   return {
     outlet_id: '', work_unit_id: '', requested_by: '', vendor_id: '', vendor_name: '',
@@ -869,7 +865,7 @@ async function fetchList() {
 function goPage(p) { page.value = p; fetchList() }
 
 function openCreate() {
-  form.value = emptyForm(); createError.value = ''; formErrors.value = {}
+  form.value = emptyForm(); createError.value = ''
   if (myWorkUnit.value) {
     form.value.outlet_id = myWorkUnit.value.outlet_id
     form.value.requested_by = myWorkUnit.value.admin_name || authStore.admin?.name || ''
@@ -879,7 +875,7 @@ function openCreate() {
 }
 
 async function submitCreate() {
-  createError.value = ''; formErrors.value = {}
+  createError.value = ''
   if (!myWorkUnit.value) { createError.value = 'Anda belum ditugaskan ke unit kerja.'; return }
   const validItems = form.value.items.filter(it => it.name.trim())
   if (!validItems.length) { createError.value = 'Minimal 1 barang harus diisi.'; return }
@@ -913,9 +909,12 @@ async function viewDetail(row) {
 
 async function viewChildDetail(child) {
   try {
+    const d = await purchaseApi.get(child.id)
+    // Set state setelah fetch sukses — bila gagal, modal tidak menampilkan
+    // tombol "Kembali ke Pengajuan Induk" untuk detail yang tak termuat.
     parentDetailId.value = detail.value?.id || null
-    detail.value = await purchaseApi.get(child.id)
-    detailItems.value = getUnsplitItems(detail.value)
+    detail.value = d
+    detailItems.value = getUnsplitItems(d)
     detailRejectMode.value = false
     detailRejectReason.value = ''
   } catch { toast.error('Gagal memuat detail.') }
@@ -928,19 +927,6 @@ async function backToParent() {
     detailItems.value = getUnsplitItems(detail.value)
     parentDetailId.value = null
   } catch { toast.error('Gagal memuat detail induk.') }
-}
-
-function openSplitVendorSelected() {
-  const selected = detailItems.value.filter(it => it.selected)
-  if (!selected.length) return
-  
-  splitItems.value = JSON.parse(JSON.stringify(selected)).map(it => ({
-    ...it,
-    selected: true
-  }))
-  splitVendorId.value = ''
-  splitError.value = ''
-  showSplitModal.value = true
 }
 
 const showDeleteItemConfirm = ref(false)
@@ -1006,12 +992,6 @@ async function submitDetailReject() {
   finally { actionLoading.value = false }
 }
 
-function confirmAction(row, action) {
-  actionTarget.value = row
-  pendingAction.value = action
-  showActionConfirm.value = true
-}
-
 function confirmDetailAction(action) {
   actionTarget.value = detail.value
   pendingAction.value = action
@@ -1034,8 +1014,6 @@ async function submitAction() {
   } catch (err) { toast.error(err?.message ?? 'Gagal mengubah status.') }
   finally { actionLoading.value = false }
 }
-
-function openReject(row) { rejectTarget.value = row; rejectReason.value = ''; showReject.value = true }
 
 async function submitReject() {
   if (!rejectReason.value.trim()) { toast.error('Alasan penolakan wajib diisi.'); return }

@@ -1,6 +1,7 @@
 package services
 
 import (
+	"database/sql"
 	"fmt"
 	"strings"
 	"time"
@@ -11,12 +12,13 @@ import (
 	"github.com/lib/pq"
 )
 
-func generateGRNNumber() string {
-	t := time.Now()
-	var seq int
-	prefix := fmt.Sprintf("GRN%s", t.Format("060102"))
-	database.DB.QueryRow(`SELECT COUNT(*)+1 FROM goods_receipts WHERE grn_number LIKE $1`, prefix+"%").Scan(&seq)
-	return fmt.Sprintf("%s%03d", prefix, seq)
+func generateGRNNumber(tx *sql.Tx) (string, error) {
+	prefix := fmt.Sprintf("GRN%s", time.Now().In(GetTimezoneLocation()).Format("060102"))
+	seq, err := nextDocNumber(tx, "goods_receipts", "grn_number", prefix)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s%03d", prefix, seq), nil
 }
 
 // CreateGoodsReceipt mencatat penerimaan barang: header GRN + tiap baris menghasilkan
@@ -36,7 +38,10 @@ func CreateGoodsReceipt(req models.GoodsReceiptRequest, actor string) (*models.G
 	defer tx.Rollback()
 
 	grnID := NewULID()
-	grnNumber := generateGRNNumber()
+	grnNumber, err := generateGRNNumber(tx)
+	if err != nil {
+		return nil, err
+	}
 	now := time.Now().UTC()
 
 	if _, err := tx.Exec(`
