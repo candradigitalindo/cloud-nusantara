@@ -496,6 +496,52 @@ type PpicOtifReport struct {
 	Note      string        `json:"note"`
 }
 
+// ── Laporan Distribusi Induk → Outlet ─────────────────────────
+// Matriks per item: qty dikirim dari gudang induk ke tiap outlet dalam periode,
+// pemakaian outlet (jual/waste/lainnya), dan stok kini — untuk tracking moving
+// item saat stock opname dan membandingkan kiriman vs stok semua outlet.
+
+type PpicDistOutletCol struct {
+	OutletID      string `json:"outlet_id"`
+	OutletName    string `json:"outlet_name"`
+	WarehouseID   string `json:"warehouse_id"`
+	WarehouseName string `json:"warehouse_name"`
+}
+
+type PpicDistCell struct {
+	Delivered     float64 `json:"delivered"`      // qty_base diterima dari induk dalam periode
+	DeliveryCount int     `json:"delivery_count"` // jumlah baris kiriman
+	LastDelivery  string  `json:"last_delivery"`  // waktu kiriman terakhir
+	SaleOut       float64 `json:"sale_out"`       // terpakai penjualan (qty_base, positif)
+	WasteOut      float64 `json:"waste_out"`      // waste/spoiled/expired
+	OtherOut      float64 `json:"other_out"`      // keluar lain (produksi, transfer keluar, koreksi minus)
+	OtherIn       float64 `json:"other_in"`       // masuk selain dari induk (GRN, produksi, koreksi plus)
+	CurrentQty    float64 `json:"current_qty"`    // stok kini gudang outlet
+}
+
+type PpicDistRow struct {
+	ItemID         string                  `json:"item_id"`
+	ItemCode       string                  `json:"item_code"`
+	ItemName       string                  `json:"item_name"`
+	Category       string                  `json:"category"`
+	BaseUnit       string                  `json:"base_unit"`
+	CentralQty     float64                 `json:"central_qty"`      // stok kini gudang induk
+	TotalDelivered float64                 `json:"total_delivered"`  // Σ kiriman semua outlet
+	TotalOutletQty float64                 `json:"total_outlet_qty"` // Σ stok kini semua outlet
+	Cells          map[string]PpicDistCell `json:"cells"`            // key = outlet_id
+}
+
+type PpicDistributionReport struct {
+	DateFrom            string              `json:"date_from"`
+	DateTo              string              `json:"date_to"`
+	Outlets             []PpicDistOutletCol `json:"outlets"`
+	Rows                []PpicDistRow       `json:"rows"`
+	TotalRows           int                 `json:"total_rows"`
+	TotalDeliveredValue float64             `json:"total_delivered_value"` // Σ qty × cost kiriman
+	DeliveryDocs        int                 `json:"delivery_docs"`         // dokumen transfer unik
+	ItemsDelivered      int                 `json:"items_delivered"`       // item dengan kiriman > 0
+}
+
 // ── HPP Menu / Costing Card (Fase 3) ──────────────────────────
 
 type PpicHppIngredient struct {

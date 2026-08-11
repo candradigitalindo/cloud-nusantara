@@ -3,9 +3,12 @@
     <div class="flex flex-wrap items-center justify-between gap-3">
       <div>
         <h1 class="text-xl font-bold text-gray-900">Laporan PPIC</h1>
-        <p class="text-xs text-gray-500 mt-0.5">Variance pemakaian & food cost, realisasi produksi, akurasi forecast, dan kinerja vendor.</p>
+        <p class="text-xs text-gray-500 mt-0.5">Distribusi induk → outlet, variance pemakaian & food cost, realisasi produksi, akurasi forecast, dan kinerja vendor.</p>
       </div>
-      <AppButton v-if="canExport" variant="secondary" :loading="exporting" @click="doExport">⬇ Export Excel</AppButton>
+      <AppButton v-if="canExport" variant="secondary" :loading="exporting" @click="doExport">
+        <svg class="inline-block align-[-2px] mr-1" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Export Excel
+      </AppButton>
     </div>
 
     <!-- Tabs -->
@@ -32,9 +35,14 @@
           <label class="text-xs font-semibold text-gray-600">Gudang</label>
           <SearchSelect v-model="warehouseId" :options="warehouseOptions" placeholder="Semua Gudang" />
         </div>
-        <div v-if="tab === 'forecast' || tab === 'hpp' || tab === 'sold'" class="min-w-[220px]">
+        <div v-if="tab === 'forecast' || tab === 'hpp' || tab === 'sold' || tab === 'distribution'" class="min-w-[220px]">
           <label class="text-xs font-semibold text-gray-600">Outlet</label>
           <SearchSelect v-model="outletId" :options="outletOptions" placeholder="Semua Outlet" />
+        </div>
+        <div v-if="tab === 'distribution'" class="flex-1 min-w-[180px]">
+          <label class="text-xs font-semibold text-gray-600">Cari Item / Kode</label>
+          <input v-model="distSearch" placeholder="Nama item atau kode bahan..."
+            class="block w-full text-sm border border-gray-200 rounded-lg px-3 py-2" />
         </div>
         <div v-if="tab === 'sold'" class="flex-1 min-w-[180px]">
           <label class="text-xs font-semibold text-gray-600">Cari Produk / Kategori</label>
@@ -87,7 +95,7 @@
                   </div>
                 </td>
                 <td>
-                  <span v-if="r.has_recipe" class="pill-ok">✓</span>
+                  <span v-if="r.has_recipe" class="pill-ok"><svg class="inline-block align-[-2px]" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
                   <router-link v-else to="/recipes" class="pill-no" title="Produk belum punya resep — klik untuk melengkapi">belum</router-link>
                 </td>
               </tr>
@@ -111,7 +119,8 @@
       </div>
 
       <div v-if="rep.no_recipe_sample" class="warn-note">
-        ⚠ Menu tanpa resep (HPP tidak bisa dihitung): {{ rep.no_recipe_sample }}<span v-if="rep.product_count - rep.with_recipe > 10">, …</span>
+        <svg class="inline-block align-[-2px] mr-0.5" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+        Menu tanpa resep (HPP tidak bisa dihitung): {{ rep.no_recipe_sample }}<span v-if="rep.product_count - rep.with_recipe > 10">, …</span>
         — total {{ rep.product_count - rep.with_recipe }} menu. Lengkapi di halaman <router-link to="/recipes" class="underline font-semibold">Resep</router-link>.
       </div>
 
@@ -165,7 +174,8 @@
     <!-- ══ VARIANCE ══ -->
     <template v-else-if="tab === 'variance' && rep">
       <div v-if="!rep.representative && rep.qty_sold > 0" class="warn-note">
-        ⚠ Coverage resep baru <b>{{ rep.recipe_coverage_pct.toFixed(1) }}%</b> dari qty terjual — angka variance <b>belum representatif</b>.
+        <svg class="inline-block align-[-2px] mr-0.5" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+        Coverage resep baru <b>{{ rep.recipe_coverage_pct.toFixed(1) }}%</b> dari qty terjual — angka variance <b>belum representatif</b>.
         Lengkapi resep produk agar analisis akurat (target ≥ 80%).
       </div>
       <div class="stat-grid">
@@ -288,6 +298,79 @@
       </AppCard>
     </template>
 
+    <!-- ══ DISTRIBUSI INDUK → OUTLET ══ -->
+    <template v-else-if="tab === 'distribution' && rep">
+      <div class="stat-grid">
+        <div class="stat"><div class="stat-l">Nilai Dikirim</div><div class="stat-v">{{ fmtRp(rep.total_delivered_value) }}</div><div class="stat-s">dari gudang induk pada rentang</div></div>
+        <div class="stat"><div class="stat-l">Dokumen Kiriman</div><div class="stat-v">{{ rep.delivery_docs }}</div><div class="stat-s">transfer diterima outlet</div></div>
+        <div class="stat"><div class="stat-l">Item Bergerak</div><div class="stat-v">{{ rep.items_delivered }}</div><div class="stat-s">item dikirim dari induk</div></div>
+        <div class="stat"><div class="stat-l">Outlet Tujuan</div><div class="stat-v">{{ rep.outlets.length }}</div><div class="stat-s">gudang outlet aktif dalam scope</div></div>
+      </div>
+      <p class="text-[11px] text-gray-400 -mt-2">
+        Angka = agregat semua outlet dalam filter (pilih outlet di atas untuk fokus satu outlet).
+        Klik baris untuk rincian per outlet — bandingkan kiriman &amp; pemakaian dengan hasil hitung fisik saat stock opname.
+      </p>
+      <AppCard :padding="false">
+        <div class="overflow-x-auto">
+          <table class="rp-table">
+            <thead>
+              <tr>
+                <th></th>
+                <th>Item</th>
+                <th class="th-r">Stok Induk</th>
+                <th class="th-r">Dikirim</th>
+                <th class="th-r">Terjual</th>
+                <th class="th-r">Waste</th>
+                <th class="th-r">Keluar Lain</th>
+                <th class="th-r">Masuk Lain</th>
+                <th class="th-r">Stok Outlet</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="!rep.rows.length"><td colspan="9" class="p-8 text-center text-sm text-gray-400">Tidak ada kiriman atau stok outlet pada rentang &amp; filter ini.</td></tr>
+              <template v-for="r in rep.rows" :key="r.item_id">
+                <tr class="cursor-pointer" @click="distOpen[r.item_id] = !distOpen[r.item_id]">
+                  <td class="w-8 text-center text-gray-400">{{ distOpen[r.item_id] ? '▾' : '▸' }}</td>
+                  <td><div class="font-medium text-gray-900 text-sm">{{ r.item_name }}</div><div class="text-[11px] text-gray-400 font-mono">{{ r.item_code }} · {{ r.base_unit }}</div></td>
+                  <td class="td-num text-gray-600">{{ fmtQty(r.central_qty) }}</td>
+                  <td class="td-num">
+                    <span :class="r.total_delivered > 0 ? 'font-bold text-blue-700' : 'text-gray-300'">{{ fmtQty(r.total_delivered) }}</span>
+                    <div v-if="distTot(r).outlets > 0" class="text-[10px] text-gray-400">→ {{ distTot(r).outlets }} outlet</div>
+                  </td>
+                  <td class="td-num">{{ fmtQty(distTot(r).sale) }}</td>
+                  <td class="td-num" :class="distTot(r).waste > 0 ? 'text-red-600 font-semibold' : ''">{{ fmtQty(distTot(r).waste) }}</td>
+                  <td class="td-num text-gray-500">{{ fmtQty(distTot(r).otherOut) }}</td>
+                  <td class="td-num text-gray-500">{{ fmtQty(distTot(r).otherIn) }}</td>
+                  <td class="td-num font-bold">{{ fmtQty(r.total_outlet_qty) }}</td>
+                </tr>
+                <tr v-if="distOpen[r.item_id]">
+                  <td></td>
+                  <td colspan="8" class="!p-0">
+                    <table class="ing-table">
+                      <thead><tr><th>Outlet</th><th class="th-r">Dikirim</th><th class="th-r">Kiriman</th><th>Terakhir</th><th class="th-r">Terjual</th><th class="th-r">Waste</th><th class="th-r">Keluar Lain</th><th class="th-r">Masuk Lain</th><th class="th-r">Stok Kini</th></tr></thead>
+                      <tbody>
+                        <tr v-for="o in rep.outlets.filter(x => r.cells[x.outlet_id])" :key="o.outlet_id">
+                          <td>{{ o.outlet_name }}</td>
+                          <td class="td-num font-semibold text-blue-700">{{ fmtQty(r.cells[o.outlet_id].delivered) }}</td>
+                          <td class="td-num">{{ r.cells[o.outlet_id].delivery_count }}×</td>
+                          <td class="text-xs text-gray-500">{{ fmtDate(r.cells[o.outlet_id].last_delivery) }}</td>
+                          <td class="td-num">{{ fmtQty(r.cells[o.outlet_id].sale_out) }}</td>
+                          <td class="td-num" :class="r.cells[o.outlet_id].waste_out > 0 ? 'text-red-600 font-semibold' : ''">{{ fmtQty(r.cells[o.outlet_id].waste_out) }}</td>
+                          <td class="td-num">{{ fmtQty(r.cells[o.outlet_id].other_out) }}</td>
+                          <td class="td-num">{{ fmtQty(r.cells[o.outlet_id].other_in) }}</td>
+                          <td class="td-num font-semibold">{{ fmtQty(r.cells[o.outlet_id].current_qty) }}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+      </AppCard>
+    </template>
+
     <!-- Paginasi bersama semua tab -->
     <div v-if="!loading && totalRows > PAGE_SIZE" class="flex items-center justify-between bg-white border border-gray-200 rounded-xl px-4 py-3">
       <span class="text-xs text-gray-400">
@@ -317,6 +400,7 @@ const canExport = computed(() => auth.hasPermission('ppic.reports.export'))
 
 const TABS = [
   { key: 'sold', label: 'Produk Terjual' },
+  { key: 'distribution', label: 'Distribusi Induk → Outlet' },
   { key: 'hpp', label: 'HPP Menu' },
   { key: 'variance', label: 'Variance Pemakaian' },
   { key: 'production', label: 'Produksi & Yield' },
@@ -334,6 +418,19 @@ const idealPct = ref(35)
 const hppSearch = ref('')
 const hppOpen = reactive({})
 const soldSearch = ref('')
+const distSearch = ref('')
+const distOpen = reactive({})
+
+// Agregat sel distribusi per baris item (jumlah semua outlet dalam filter).
+function distTot(r) {
+  const t = { sale: 0, waste: 0, otherOut: 0, otherIn: 0, outlets: 0 }
+  for (const c of Object.values(r.cells || {})) {
+    t.sale += c.sale_out; t.waste += c.waste_out
+    t.otherOut += c.other_out; t.otherIn += c.other_in
+    if (c.delivered > 0) t.outlets++
+  }
+  return t
+}
 const PAGE_SIZE = 25
 const reportPage = ref(1)
 const totalRows = computed(() => rep.value?.total_rows ?? 0)
@@ -362,7 +459,9 @@ function params() {
     date_from: dateFrom.value, date_to: dateTo.value,
     warehouse_id: warehouseId.value, outlet_id: outletId.value,
     ideal_pct: idealPct.value,
-    search: tab.value === 'hpp' ? hppSearch.value : soldSearch.value,
+    search: tab.value === 'hpp' ? hppSearch.value
+      : tab.value === 'distribution' ? distSearch.value
+      : soldSearch.value,
     page: reportPage.value, limit: PAGE_SIZE,
   }
 }

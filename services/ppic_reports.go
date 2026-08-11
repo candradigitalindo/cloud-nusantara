@@ -202,7 +202,12 @@ func GetPpicVarianceReport(dateFrom, dateTo, warehouseID string, outletScope []s
 	}
 	infos := map[string]itemInfo{}
 	if len(ids) > 0 {
-		rows, err := database.DB.Query(`SELECT id, code, name, category, base_unit, avg_cost FROM stock_items WHERE id = ANY($1)`, pq.Array(ids))
+		// avg_cost dari ledger — kolom stock_items.avg_cost tidak pernah ditulis.
+		rows, err := database.DB.Query(`
+			SELECT si.id, si.code, si.name, si.category, si.base_unit,
+				(SELECT COALESCE(SUM(l.qty_base * l.avg_cost) / NULLIF(SUM(l.qty_base), 0), 0)
+				 FROM stock_ledger l WHERE l.item_id = si.id AND l.qty_base > 0)
+			FROM stock_items si WHERE si.id = ANY($1)`, pq.Array(ids))
 		if err != nil {
 			return nil, err
 		}
@@ -497,4 +502,217 @@ func maxf(a, b float64) float64 {
 		return a
 	}
 	return b
+}
+
+// GetPpicDistributionReport — matriks distribusi gudang induk → outlet per item:
+// kiriman dalam periode, pemakaian outlet, dan stok kini (induk + tiap outlet).
+// Baris = item yang punya kiriman, pergerakan, atau stok di gudang outlet scope.
+func GetPpicDistributionReport(dateFrom, dateTo, outletID, search string, outletScope []string) (*models.PpicDistributionReport, error) {
+	rep := &models.PpicDistributionReport{
+		DateFrom: dateFrom, DateTo: dateTo,
+		Outlets: []models.PpicDistOutletCol{}, Rows: []models.PpicDistRow{},
+	}
+
+	// ── 1. Kolom outlet: gudang outlet aktif dalam scope ──
+	q := `SELECT o.id, o.name, w.id, w.name
+		FROM warehouses w JOIN outlets o ON o.id = w.outlet_id
+		WHERE w.type = 'outlet' AND w.is_active = true`
+	args := []interface{}{}
+	if outletScope != nil {
+		args = append(args, pq.Array(outletScope))
+		q += fmt.Sprintf(` AND o.id = ANY($%d)`, len(args))
+	}
+	if outletID != "" {
+		args = append(args, outletID)
+		q += fmt.Sprintf(` AND o.id = $%d`, len(args))
+	}
+	q += ` ORDER BY o.name`
+	oRows, err := database.DB.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	whToOutlet := map[string]string{}
+	var whIDs []string
+	for oRows.Next() {
+		var c models.PpicDistOutletCol
+		if oRows.Scan(&c.OutletID, &c.OutletName, &c.WarehouseID, &c.WarehouseName) == nil {
+			rep.Outlets = append(rep.Outlets, c)
+			whToOutlet[c.WarehouseID] = c.OutletID
+			whIDs = append(whIDs, c.WarehouseID)
+		}
+	}
+	oRows.Close()
+	if len(whIDs) == 0 {
+		return rep, nil
+	}
+
+	cells := map[string]map[string]*models.PpicDistCell{} // item → outlet → cell
+	cell := func(itemID, outletID string) *models.PpicDistCell {
+		if cells[itemID] == nil {
+			cells[itemID] = map[string]*models.PpicDistCell{}
+		}
+		if cells[itemID][outletID] == nil {
+			cells[itemID][outletID] = &models.PpicDistCell{}
+		}
+		return cells[itemID][outletID]
+	}
+
+	// ── 2. Kiriman dari induk per item×gudang dalam periode ──
+	dRows, err := database.DB.Query(`
+		SELECT sm.item_id, sm.warehouse_id, SUM(sm.qty_base), COUNT(*),
+			COALESCE(TO_CHAR(MAX(sm.created_at), 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), ''),
+			COALESCE(SUM(sm.qty_base * sm.cost_per_base), 0)
+		FROM stock_movements sm
+		JOIN stock_transfers st ON st.id = sm.ref_id
+		JOIN warehouses fw ON fw.id = st.from_warehouse_id AND fw.type = 'central'
+		WHERE sm.movement_type = 'transfer_in' AND sm.ref_type = 'stock_transfer'
+			AND sm.warehouse_id = ANY($1)
+			AND sm.created_at >= tz_day_start($2::date) AND sm.created_at < tz_day_start($3::date + 1)
+		GROUP BY sm.item_id, sm.warehouse_id`,
+		pq.Array(whIDs), dateFrom, dateTo)
+	if err != nil {
+		return nil, err
+	}
+	for dRows.Next() {
+		var itemID, whID, last string
+		var qty, val float64
+		var cnt int
+		if dRows.Scan(&itemID, &whID, &qty, &cnt, &last, &val) == nil {
+			c := cell(itemID, whToOutlet[whID])
+			c.Delivered += qty
+			c.DeliveryCount += cnt
+			if last > c.LastDelivery {
+				c.LastDelivery = last
+			}
+			rep.TotalDeliveredValue += val
+		}
+	}
+	dRows.Close()
+
+	// Dokumen transfer unik dalam periode.
+	database.DB.QueryRow(`
+		SELECT COUNT(DISTINCT sm.ref_id)
+		FROM stock_movements sm
+		JOIN stock_transfers st ON st.id = sm.ref_id
+		JOIN warehouses fw ON fw.id = st.from_warehouse_id AND fw.type = 'central'
+		WHERE sm.movement_type = 'transfer_in' AND sm.ref_type = 'stock_transfer'
+			AND sm.warehouse_id = ANY($1)
+			AND sm.created_at >= tz_day_start($2::date) AND sm.created_at < tz_day_start($3::date + 1)`,
+		pq.Array(whIDs), dateFrom, dateTo).Scan(&rep.DeliveryDocs)
+
+	// ── 3. Pemakaian per item×gudang dalam periode ──
+	// Masuk-lain mengecualikan kiriman induk (sudah di kolom Delivered).
+	uRows, err := database.DB.Query(`
+		SELECT sm.item_id, sm.warehouse_id,
+			COALESCE(SUM(CASE WHEN sm.movement_type = 'sale' THEN -sm.qty_base END), 0),
+			COALESCE(SUM(CASE WHEN sm.movement_type IN ('waste','spoiled','expired') THEN -sm.qty_base END), 0),
+			COALESCE(SUM(CASE WHEN sm.qty_base < 0 AND sm.movement_type NOT IN ('sale','waste','spoiled','expired') THEN -sm.qty_base END), 0),
+			COALESCE(SUM(CASE WHEN sm.qty_base > 0 AND NOT (sm.movement_type = 'transfer_in' AND COALESCE(fw.type, '') = 'central') THEN sm.qty_base END), 0)
+		FROM stock_movements sm
+		LEFT JOIN stock_transfers st ON sm.ref_type = 'stock_transfer' AND st.id = sm.ref_id
+		LEFT JOIN warehouses fw ON fw.id = st.from_warehouse_id
+		WHERE sm.warehouse_id = ANY($1)
+			AND sm.created_at >= tz_day_start($2::date) AND sm.created_at < tz_day_start($3::date + 1)
+		GROUP BY sm.item_id, sm.warehouse_id`,
+		pq.Array(whIDs), dateFrom, dateTo)
+	if err != nil {
+		return nil, err
+	}
+	for uRows.Next() {
+		var itemID, whID string
+		var sale, waste, otherOut, otherIn float64
+		if uRows.Scan(&itemID, &whID, &sale, &waste, &otherOut, &otherIn) == nil {
+			if sale == 0 && waste == 0 && otherOut == 0 && otherIn == 0 {
+				continue
+			}
+			c := cell(itemID, whToOutlet[whID])
+			c.SaleOut += sale
+			c.WasteOut += waste
+			c.OtherOut += otherOut
+			c.OtherIn += otherIn
+		}
+	}
+	uRows.Close()
+
+	// ── 4. Stok kini gudang outlet ──
+	sRows, err := database.DB.Query(
+		`SELECT item_id, warehouse_id, qty_base FROM stock_ledger WHERE warehouse_id = ANY($1)`,
+		pq.Array(whIDs))
+	if err != nil {
+		return nil, err
+	}
+	for sRows.Next() {
+		var itemID, whID string
+		var qty float64
+		if sRows.Scan(&itemID, &whID, &qty) == nil {
+			if qty == 0 && cells[itemID] == nil {
+				continue // stok 0 tanpa aktivitas: jangan jadi baris sendiri
+			}
+			cell(itemID, whToOutlet[whID]).CurrentQty += qty
+		}
+	}
+	sRows.Close()
+	if len(cells) == 0 {
+		return rep, nil
+	}
+
+	// ── 5. Stok kini gudang induk per item ──
+	centralQty := map[string]float64{}
+	cRows, err := database.DB.Query(`
+		SELECT sl.item_id, COALESCE(SUM(sl.qty_base), 0)
+		FROM stock_ledger sl
+		JOIN warehouses w ON w.id = sl.warehouse_id AND w.type = 'central' AND w.is_active = true
+		GROUP BY sl.item_id`)
+	if err == nil {
+		for cRows.Next() {
+			var id string
+			var qty float64
+			if cRows.Scan(&id, &qty) == nil {
+				centralQty[id] = qty
+			}
+		}
+		cRows.Close()
+	}
+
+	// ── 6. Master item (+ filter pencarian) → susun baris ──
+	itemIDs := make([]string, 0, len(cells))
+	for id := range cells {
+		itemIDs = append(itemIDs, id)
+	}
+	iq := `SELECT id, code, name, category, base_unit FROM stock_items WHERE id = ANY($1)`
+	iargs := []interface{}{pq.Array(itemIDs)}
+	if s := strings.TrimSpace(search); s != "" {
+		iargs = append(iargs, "%"+s+"%")
+		iq += ` AND (name ILIKE $2 OR code ILIKE $2)`
+	}
+	iRows, err := database.DB.Query(iq, iargs...)
+	if err != nil {
+		return nil, err
+	}
+	for iRows.Next() {
+		r := models.PpicDistRow{Cells: map[string]models.PpicDistCell{}}
+		if iRows.Scan(&r.ItemID, &r.ItemCode, &r.ItemName, &r.Category, &r.BaseUnit) != nil {
+			continue
+		}
+		r.CentralQty = centralQty[r.ItemID]
+		for oid, c := range cells[r.ItemID] {
+			r.TotalDelivered += c.Delivered
+			r.TotalOutletQty += c.CurrentQty
+			r.Cells[oid] = *c
+		}
+		if r.TotalDelivered > 0 {
+			rep.ItemsDelivered++
+		}
+		rep.Rows = append(rep.Rows, r)
+	}
+	iRows.Close()
+
+	// Item paling banyak dikirim di atas — fokus PPIC ke moving item.
+	sort.Slice(rep.Rows, func(i, j int) bool {
+		if rep.Rows[i].TotalDelivered != rep.Rows[j].TotalDelivered {
+			return rep.Rows[i].TotalDelivered > rep.Rows[j].TotalDelivered
+		}
+		return rep.Rows[i].ItemName < rep.Rows[j].ItemName
+	})
+	return rep, nil
 }

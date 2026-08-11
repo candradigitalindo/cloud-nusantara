@@ -503,6 +503,13 @@ func GetPpicReport(c *fiber.Ctx) error {
 			rep.Rows, rep.TotalRows = pagePpicRows(rep.Rows, page, limit)
 		}
 		data = rep
+	case "distribution":
+		var rep *models.PpicDistributionReport
+		rep, err = services.GetPpicDistributionReport(dateFrom, dateTo, outletID, c.Query("search"), scope)
+		if rep != nil {
+			rep.Rows, rep.TotalRows = pagePpicRows(rep.Rows, page, limit)
+		}
+		data = rep
 	default:
 		return c.Status(400).JSON(models.APIResponse{Error: "tab laporan tidak dikenal"})
 	}

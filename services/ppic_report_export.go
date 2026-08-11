@@ -422,6 +422,57 @@ func BuildPpicReportExcel(tab, dateFrom, dateTo, warehouseID, outletID string, i
 		f.SetColWidth(sheet, "A", "A", 30)
 		f.SetColWidth(sheet, "B", "H", 17)
 
+	// ─────────────────────────────────────────────────────────
+	case "distribution":
+		title, slug = "Laporan PPIC — Distribusi Gudang Induk → Outlet", "Distribusi-Outlet"
+		rep, err := GetPpicDistributionReport(dateFrom, dateTo, outletID, "", outletScope)
+		if err != nil {
+			return nil, "", err
+		}
+		hrow := ppicWriteHeader(f, sheet, st, title, period,
+			"Outlet: "+orDefault(outletName, "Semua (sesuai hak akses)"), actor, [][2]string{
+				{"Nilai barang dikirim", rpID(rep.TotalDeliveredValue)},
+				{"Dokumen kiriman", fmt.Sprintf("%d transfer diterima", rep.DeliveryDocs)},
+				{"Item bergerak", fmt.Sprintf("%d item dikirim dari induk", rep.ItemsDelivered)},
+				{"Outlet tujuan", fmt.Sprintf("%d outlet", len(rep.Outlets))},
+			})
+		headers := []string{"No", "Item", "Kode", "Satuan", "Outlet", "Dikirim (Qty)", "Kiriman", "Kiriman Terakhir",
+			"Terjual", "Waste", "Keluar Lain", "Masuk Lain", "Stok Outlet Kini", "Stok Induk Kini"}
+		ppicHeaderRowAt(f, sheet, hrow, headers, st.header)
+		row := hrow + 1
+		no := 0
+		for _, r := range rep.Rows {
+			for _, o := range rep.Outlets {
+				c, ok := r.Cells[o.OutletID]
+				if !ok {
+					continue
+				}
+				no++
+				last := ""
+				if c.LastDelivery != "" {
+					last = fmtDateID(c.LastDelivery[:10])
+				}
+				f.SetSheetRow(sheet, fmt.Sprintf("A%d", row), &[]interface{}{
+					no, r.ItemName, r.ItemCode, r.BaseUnit, o.OutletName,
+					c.Delivered, c.DeliveryCount, last,
+					c.SaleOut, c.WasteOut, c.OtherOut, c.OtherIn, c.CurrentQty, r.CentralQty})
+				f.SetCellStyle(sheet, fmt.Sprintf("A%d", row), fmt.Sprintf("A%d", row), st.num)
+				f.SetCellStyle(sheet, fmt.Sprintf("B%d", row), fmt.Sprintf("E%d", row), st.text)
+				f.SetCellStyle(sheet, fmt.Sprintf("F%d", row), fmt.Sprintf("G%d", row), st.num)
+				f.SetCellStyle(sheet, fmt.Sprintf("H%d", row), fmt.Sprintf("H%d", row), st.text)
+				f.SetCellStyle(sheet, fmt.Sprintf("I%d", row), fmt.Sprintf("N%d", row), st.num)
+				if c.WasteOut > 0 {
+					f.SetCellStyle(sheet, fmt.Sprintf("J%d", row), fmt.Sprintf("J%d", row), badNum)
+				}
+				row++
+			}
+		}
+		ppicAutoFilter(f, sheet, hrow, row-1, len(headers))
+		f.SetColWidth(sheet, "A", "A", 5)
+		f.SetColWidth(sheet, "B", "B", 30)
+		f.SetColWidth(sheet, "C", "E", 16)
+		f.SetColWidth(sheet, "F", "N", 14)
+
 	default:
 		return nil, "", fmt.Errorf("tab laporan tidak dikenal: %s", tab)
 	}
