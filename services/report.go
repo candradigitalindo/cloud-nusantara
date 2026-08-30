@@ -1772,11 +1772,14 @@ func GetDiscountReport(dateFrom, dateTo, outletID string, scopeIDs []string, pag
 	}
 	sum.Gross = sum.Net + sum.Discount + sum.Compliment
 
-	// Rows
+	// Rows — created_at dikirim sebagai waktu lokal zona aplikasi (app_settings)
+	// tanpa penanda zona, agar tampilan tidak bergantung zona waktu browser.
+	const tz = "COALESCE((SELECT value FROM app_settings WHERE key='timezone'),'Asia/Jakarta')"
 	dataArgs := append(append([]interface{}{}, args...), limit, offset)
 	rows, err := database.DB.Query(base+fmt.Sprintf(`
-		SELECT id, outlet_name, customer_name, total_amount, discount, compliment, created_at::text
-		FROM rows ORDER BY created_at DESC LIMIT $%d OFFSET $%d`, idx, idx+1), dataArgs...)
+		SELECT id, outlet_name, customer_name, total_amount, discount, compliment,
+		       TO_CHAR((created_at AT TIME ZONE 'UTC') AT TIME ZONE %s, 'YYYY-MM-DD"T"HH24:MI:SS')
+		FROM rows ORDER BY created_at DESC LIMIT $%d OFFSET $%d`, tz, idx, idx+1), dataArgs...)
 	if err != nil {
 		return nil, err
 	}

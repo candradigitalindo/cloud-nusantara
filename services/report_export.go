@@ -2661,7 +2661,13 @@ func BuildDiscountReportExcel(dateFrom, dateTo, outletID string, scopeIDs []stri
 	for i, d := range rowsData {
 		r := i + 2
 		f.SetCellValue(shList, fmt.Sprintf("A%d", r), i+1)
-		f.SetCellValue(shList, fmt.Sprintf("B%d", r), fmtFlexTimeID(d.CreatedAt, loc))
+		// CreatedAt dari service sudah dalam zona aplikasi (tanpa penanda zona),
+		// jadi cukup diformat ulang tanpa konversi.
+		waktu := d.CreatedAt
+		if t, err := time.Parse("2006-01-02T15:04:05", d.CreatedAt); err == nil {
+			waktu = fmtTimeID(t)
+		}
+		f.SetCellValue(shList, fmt.Sprintf("B%d", r), waktu)
 		f.SetCellValue(shList, fmt.Sprintf("C%d", r), d.OutletName)
 		f.SetCellValue(shList, fmt.Sprintf("D%d", r), d.CustomerName)
 		f.SetCellValue(shList, fmt.Sprintf("E%d", r), d.Gross)
