@@ -171,6 +171,37 @@ func MarkQRISChargePaid(chargeID, status string) error {
 	if n, _ := res.RowsAffected(); n == 0 {
 		// Bukan error: callback ulang atas tagihan yang sudah selesai.
 		log.Printf("webhook qris %s diabaikan — tagihan tidak lagi pending", chargeID)
+		return nil
+	}
+
+	if status == QRISPaid {
+		// Tagihan ini mungkin milik pesanan online. Baru SETELAH lunas pesanan
+		// itu boleh dilihat POS — dapur tidak pernah memasak pesanan yang belum
+		// dibayar. Dijalankan hanya saat baris benar-benar berubah menjadi
+		// lunas, jadi callback ganda tidak mempromosikannya dua kali.
+		if err := promoteOnlineOrderAfterPayment(chargeID); err != nil {
+			// Uang sudah masuk — jangan gagalkan webhook. Dicatat supaya
+			// pesanan yang tertinggal bisa ditelusuri.
+			log.Printf("promosi pesanan online untuk tagihan %s gagal: %v", chargeID, err)
+		}
 	}
 	return nil
+}
+
+// promoteOnlineOrderAfterPayment memindahkan pesanan dari awaiting_payment ke
+// new, mencatat nominal yang benar-benar dibayar.
+func promoteOnlineOrderAfterPayment(chargeID string) error {
+	var amount float64
+	if err := database.DB.QueryRow(
+		`SELECT amount FROM qris_charges WHERE id = $1`, chargeID,
+	).Scan(&amount); err != nil {
+		return err
+	}
+	_, err := database.DB.Exec(
+		`UPDATE online_orders
+		SET status = 'new', paid_amount = $2, updated_at = NOW()
+		WHERE qris_charge_id = $1 AND status = 'awaiting_payment'`,
+		chargeID, amount,
+	)
+	return err
 }

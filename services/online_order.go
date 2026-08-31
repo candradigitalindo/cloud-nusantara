@@ -40,7 +40,7 @@ func CreatePublicOrder(slug string, req models.PublicOrderRequest) (*models.Onli
 	}
 
 	// Master menu & add-on dibaca sekali untuk memvalidasi seluruh baris.
-	validProducts, err := productNamesByLocalID(outletID)
+	validProducts, productPrices, err := productCatalog(outletID)
 	if err != nil {
 		return nil, err
 	}
@@ -84,6 +84,38 @@ func CreatePublicOrder(slug string, req models.PublicOrderRequest) (*models.Onli
 		})
 	}
 
+	// Restoran yang tidak sedang buka shift TIDAK boleh menerima uang: tidak
+	// ada kasir yang mencatat pembayarannya dan tidak ada dapur yang memasak.
+	// Status shift di cloud bisa tertinggal satu siklus sinkronisasi, jadi
+	// paling buruk tamu diminta menunggu sebentar — jauh lebih baik daripada
+	// membayar makanan yang tak akan dibuat.
+	open, err := hasOpenShift(outletID)
+	if err != nil {
+		return nil, err
+	}
+	if !open {
+		return nil, fmt.Errorf("kasir belum buka — silakan pesan lewat pramusaji")
+	}
+
+	// Total dihitung DI SINI, memakai daftar biaya yang dikirim POS, supaya
+	// nominal QRIS sama persis dengan tagihan yang nanti dihitung kasir.
+	charges, err := ActiveCharges(outletID)
+	if err != nil {
+		return nil, err
+	}
+	subtotal := 0.0
+	for _, it := range items {
+		unit := productPrices[it.ProductLocalID]
+		for _, a := range it.Addons {
+			unit += a.Price
+		}
+		subtotal += unit * float64(it.Qty)
+	}
+	total, chargeLines := CalculateOrderTotal(subtotal, charges)
+	if total <= 0 {
+		return nil, fmt.Errorf("total pesanan tidak valid")
+	}
+
 	payload, err := json.Marshal(items)
 	if err != nil {
 		return nil, err
@@ -92,12 +124,28 @@ func CreatePublicOrder(slug string, req models.PublicOrderRequest) (*models.Onli
 	id := newChargeID()
 	_, err = database.DB.Exec(
 		`INSERT INTO online_orders (id, outlet_id, table_number, customer_name,
-			customer_phone, notes, items, status, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, 'new', NOW(), NOW())`,
+			customer_phone, notes, items, status, total_amount, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, 'awaiting_payment', $8, NOW(), NOW())`,
 		id, outletID, trimTo(req.TableNumber, 20), trimTo(req.CustomerName, 100),
-		trimTo(req.CustomerPhone, 30), trimTo(req.Notes, 200), payload,
+		trimTo(req.CustomerPhone, 30), trimTo(req.Notes, 200), payload, total,
 	)
 	if err != nil {
+		return nil, err
+	}
+
+	// QRIS dinamis: nominalnya persis sebesar tagihan pesanan ini.
+	charge, err := CreateQRISCharge(outletID, id, total,
+		fmt.Sprintf("Pesanan Meja %s", req.TableNumber))
+	if err != nil {
+		// Pesanan tanpa QR tidak ada gunanya — buang supaya tidak menggantung
+		// sebagai baris yang tak akan pernah dibayar maupun ditarik POS.
+		database.DB.Exec(`DELETE FROM online_orders WHERE id = $1`, id)
+		return nil, err
+	}
+	if _, err := database.DB.Exec(
+		`UPDATE online_orders SET qris_charge_id = $2, updated_at = NOW() WHERE id = $1`,
+		id, charge.ChargeID,
+	); err != nil {
 		return nil, err
 	}
 
@@ -106,27 +154,75 @@ func CreatePublicOrder(slug string, req models.PublicOrderRequest) (*models.Onli
 	return &models.OnlineOrder{
 		ID: id, OutletID: outletID, TableNumber: req.TableNumber,
 		CustomerName: req.CustomerName, Items: items,
-		Status: models.OnlineOrderNew,
+		Status:      models.OnlineOrderAwaitingPayment,
+		Subtotal:    subtotal,
+		ChargeLines: chargeLines,
+		TotalAmount: total,
+		Payment:     charge,
 	}, nil
 }
 
-func productNamesByLocalID(outletID string) (map[string]string, error) {
+// hasOpenShift menjawab apakah outlet sedang membuka shift kasir. Sumbernya
+// adalah shift yang disinkronkan POS, jadi jawabannya bisa tertinggal paling
+// lama satu siklus sinkronisasi.
+func hasOpenShift(outletID string) (bool, error) {
+	var n int
+	err := database.DB.QueryRow(
+		`SELECT COUNT(*) FROM cloud_cashier_shifts
+		WHERE outlet_id = $1 AND closed_at IS NULL`, outletID,
+	).Scan(&n)
+	return n > 0, err
+}
+
+// SimulateOnlineOrderPaid melunasi tagihan pesanan TANPA penyedia asli.
+//
+// Hanya berjalan saat penyedia aktif adalah "mock", jadi tidak ada jalur di
+// produksi yang bisa menandai pesanan lunas tanpa uang benar-benar masuk.
+func SimulateOnlineOrderPaid(slug, orderID string) error {
+	gw, err := ActiveGateway()
+	if err != nil || gw.Name() != "mock" {
+		return fmt.Errorf("simulasi hanya tersedia saat penyedia pembayaran mock aktif")
+	}
+	outletID, _, err := GetOutletBySlug(slug)
+	if err != nil {
+		return fmt.Errorf("outlet tidak ditemukan")
+	}
+	var chargeID sql.NullString
+	if err := database.DB.QueryRow(
+		`SELECT qris_charge_id FROM online_orders WHERE outlet_id = $1 AND id = $2`,
+		outletID, orderID,
+	).Scan(&chargeID); err != nil {
+		return fmt.Errorf("pesanan tidak ditemukan")
+	}
+	if !chargeID.Valid || chargeID.String == "" {
+		return fmt.Errorf("pesanan ini tidak punya tagihan QRIS")
+	}
+	return MarkQRISChargePaid(chargeID.String, QRISPaid)
+}
+
+// productCatalog mengembalikan nama dan harga menu outlet. Harga dibaca dari
+// master — HARGA KIRIMAN TAMU TIDAK PERNAH DIPAKAI, karena badan permintaan
+// bisa dipalsukan untuk memesan dengan harga sendiri.
+func productCatalog(outletID string) (map[string]string, map[string]float64, error) {
 	rows, err := database.DB.Query(
-		`SELECT local_id, name FROM cloud_products
+		`SELECT local_id, name, price FROM cloud_products
 		WHERE outlet_id = $1 AND is_deleted = false`, outletID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer rows.Close()
-	out := map[string]string{}
+	names := map[string]string{}
+	prices := map[string]float64{}
 	for rows.Next() {
 		var id, name string
-		if err := rows.Scan(&id, &name); err != nil {
-			return nil, err
+		var price float64
+		if err := rows.Scan(&id, &name, &price); err != nil {
+			return nil, nil, err
 		}
-		out[id] = name
+		names[id] = name
+		prices[id] = price
 	}
-	return out, rows.Err()
+	return names, prices, rows.Err()
 }
 
 func trimTo(s string, n int) string {
@@ -145,7 +241,7 @@ func trimTo(s string, n int) string {
 func PendingOnlineOrders(outletID string) ([]models.OnlineOrder, error) {
 	rows, err := database.DB.Query(
 		`SELECT id, table_number, COALESCE(customer_name,''), COALESCE(customer_phone,''),
-			COALESCE(notes,''), items, status, created_at
+			COALESCE(notes,''), items, status, created_at, total_amount, paid_amount
 		FROM online_orders
 		WHERE outlet_id = $1
 			AND (status = 'new'
@@ -164,7 +260,7 @@ func PendingOnlineOrders(outletID string) ([]models.OnlineOrder, error) {
 		var raw []byte
 		var createdAt time.Time
 		if err := rows.Scan(&o.ID, &o.TableNumber, &o.CustomerName, &o.CustomerPhone,
-			&o.Notes, &raw, &o.Status, &createdAt); err != nil {
+			&o.Notes, &raw, &o.Status, &createdAt, &o.TotalAmount, &o.PaidAmount); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal(raw, &o.Items); err != nil {
@@ -228,18 +324,35 @@ func RejectOnlineOrder(outletID, orderID, reason string) error {
 
 // OnlineOrderStatus dipakai halaman tamu untuk menampilkan perkembangan
 // pesanannya tanpa perlu login.
-func OnlineOrderStatus(slug, orderID string) (string, error) {
+//
+// Status pembayaran ikut dikembalikan supaya halaman tamu bisa membedakan
+// "belum dibayar" dari "QR kedaluwarsa" — keduanya membuat pesanan tertahan di
+// awaiting_payment, tetapi yang kedua menuntut tamu memesan ulang.
+func OnlineOrderStatus(slug, orderID string) (map[string]interface{}, error) {
 	outletID, _, err := GetOutletBySlug(slug)
 	if err != nil {
-		return "", fmt.Errorf("outlet tidak ditemukan")
+		return nil, fmt.Errorf("outlet tidak ditemukan")
 	}
 	var status string
+	var paymentStatus sql.NullString
+	var total, paid float64
 	err = database.DB.QueryRow(
-		`SELECT status FROM online_orders WHERE outlet_id = $1 AND id = $2`,
+		`SELECT o.status, o.total_amount, o.paid_amount, q.status
+		FROM online_orders o
+		LEFT JOIN qris_charges q ON q.id = o.qris_charge_id
+		WHERE o.outlet_id = $1 AND o.id = $2`,
 		outletID, orderID,
-	).Scan(&status)
+	).Scan(&status, &total, &paid, &paymentStatus)
 	if err == sql.ErrNoRows {
-		return "", fmt.Errorf("pesanan tidak ditemukan")
+		return nil, fmt.Errorf("pesanan tidak ditemukan")
 	}
-	return status, err
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{
+		"status":         status,
+		"payment_status": paymentStatus.String,
+		"total_amount":   total,
+		"paid_amount":    paid,
+	}, nil
 }

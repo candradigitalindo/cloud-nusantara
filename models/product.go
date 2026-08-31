@@ -130,3 +130,27 @@ type QRISChargeResponse struct {
 	ExpiresAt string  `json:"expires_at"`
 	PaidAt    string  `json:"paid_at,omitempty"`
 }
+
+// PushAdditionalChargeRequest — biaya tambahan (pajak/PB1, service charge)
+// yang dikirim POS. POS adalah sumber kebenarannya; cloud hanya mencerminkan.
+type PushAdditionalChargeRequest struct {
+	LocalID    string  `json:"local_id"`
+	Name       string  `json:"name"`
+	ChargeType string  `json:"charge_type"` // percentage | fixed
+	Value      float64 `json:"value"`
+	IsActive   int     `json:"is_active"`
+	Version    int     `json:"version"`
+}
+
+type CloudAdditionalCharge struct {
+	LocalID    string  `json:"local_id"`
+	Name       string  `json:"name"`
+	ChargeType string  `json:"charge_type"`
+	Value      float64 `json:"value"`
+}
+
+// ChargeLine — satu baris rincian biaya pada ringkasan tagihan tamu.
+type ChargeLine struct {
+	Name   string  `json:"name"`
+	Amount float64 `json:"amount"`
+}

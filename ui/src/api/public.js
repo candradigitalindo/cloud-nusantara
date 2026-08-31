@@ -10,4 +10,6 @@ export const publicApi = {
   // Pemesanan mandiri tamu (QR dine-in)
   order:       (slug, data) => publicClient.post(`/public/outlets/${slug}/orders`, data).then(r => r.data),
   orderStatus: (slug, id)   => publicClient.get(`/public/outlets/${slug}/orders/${id}`).then(r => r.data),
+  // Alat uji penyedia tiruan — ditolak server kecuali gateway mock aktif.
+  simulatePay: (slug, id)   => publicClient.post(`/public/outlets/${slug}/orders/${id}/simulate-paid`).then(r => r.data),
 }

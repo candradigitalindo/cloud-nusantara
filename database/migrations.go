@@ -279,6 +279,33 @@ func RunMigrations() error {
 		)`,
 		// Penarikan POS selalu memfilter outlet + status + urut waktu masuk.
 		`CREATE INDEX IF NOT EXISTS idx_online_orders_pending ON online_orders(outlet_id, status, created_at)`,
+
+		// Biaya tambahan (pajak/PB1, service charge) — cerminan tabel POS.
+		// Dipakai menghitung total pesanan online DENGAN CARA YANG SAMA dengan
+		// kasir, supaya nominal QRIS yang dibayar tamu tidak pernah berbeda
+		// dari tagihan yang nanti dihitung POS.
+		`CREATE TABLE IF NOT EXISTS cloud_additional_charges (
+			id CHAR(26) PRIMARY KEY,
+			local_id VARCHAR(50) NOT NULL,
+			outlet_id CHAR(26) NOT NULL REFERENCES outlets(id),
+			name VARCHAR(120) NOT NULL,
+			charge_type VARCHAR(20) NOT NULL,
+			value DECIMAL(15,2) NOT NULL DEFAULT 0,
+			is_active BOOLEAN NOT NULL DEFAULT true,
+			version INTEGER DEFAULT 1,
+			created_at TIMESTAMP DEFAULT (now() AT TIME ZONE 'UTC'),
+			updated_at TIMESTAMP DEFAULT (now() AT TIME ZONE 'UTC'),
+			UNIQUE(outlet_id, local_id)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_cloud_charges_outlet ON cloud_additional_charges(outlet_id, is_active)`,
+
+		// Tautan pesanan online ke tagihan QRIS-nya. Pesanan baru boleh ditarik
+		// POS SETELAH tagihan ini lunas — dapur tidak pernah memasak pesanan
+		// yang belum dibayar.
+		`ALTER TABLE online_orders ADD COLUMN IF NOT EXISTS qris_charge_id VARCHAR(64)`,
+		`ALTER TABLE online_orders ADD COLUMN IF NOT EXISTS total_amount DECIMAL(15,2) NOT NULL DEFAULT 0`,
+		`ALTER TABLE online_orders ADD COLUMN IF NOT EXISTS paid_amount DECIMAL(15,2) NOT NULL DEFAULT 0`,
+		`CREATE INDEX IF NOT EXISTS idx_online_orders_charge ON online_orders(qris_charge_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_cloud_categories_outlet ON cloud_categories(outlet_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_cloud_analytics_outlet ON cloud_analytics(outlet_id, date)`,
 		`CREATE INDEX IF NOT EXISTS idx_sync_logs_outlet ON sync_logs(outlet_id, created_at)`,

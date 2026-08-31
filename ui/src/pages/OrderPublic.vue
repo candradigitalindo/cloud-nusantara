@@ -22,17 +22,53 @@
     <div v-if="loading" class="op-state">Memuat menu…</div>
     <div v-else-if="loadError" class="op-state">{{ loadError }}</div>
 
-    <!-- Pesanan terkirim -->
+    <!-- Pembayaran QRIS / status pesanan -->
     <div v-else-if="done" class="op-wrap">
-      <div class="glass op-success">
+      <!-- Menunggu tamu membayar -->
+      <div v-if="!isPaid" class="glass op-pay">
+        <p class="op-pay-eyebrow">Scan untuk membayar</p>
+        <h2 class="op-pay-amount">{{ rupiah(done.total_amount) }}</h2>
+
+        <div class="op-qr" :class="{ 'op-qr--dead': payExpired }">
+          <img v-if="qrDataUrl" :src="qrDataUrl" alt="Kode QRIS pembayaran" />
+          <div v-else class="op-qr-load">Menyiapkan QR…</div>
+        </div>
+
+        <p v-if="payExpired" class="op-err op-pay-msg">
+          QR sudah kedaluwarsa. Silakan pesan ulang.
+        </p>
+        <p v-else class="op-pay-msg">
+          Buka aplikasi pembayaran Anda, pindai kode di atas, lalu bayar
+          sesuai nominal yang tertera. Halaman ini akan berpindah sendiri
+          setelah pembayaran diterima.
+        </p>
+
+        <div class="op-recap">
+          <div><span>Subtotal</span><b>{{ rupiah(done.subtotal) }}</b></div>
+          <div v-for="c in done.charges" :key="c.name"><span>{{ c.name }}</span><b>{{ rupiah(c.amount) }}</b></div>
+          <div class="op-recap-total"><span>Total</span><b>{{ rupiah(done.total_amount) }}</b></div>
+        </div>
+
+        <button v-if="isMockGateway && !payExpired" class="op-next op-sim" @click="simulatePaid">
+          Tandai Lunas (simulasi)
+        </button>
+        <button class="op-cancel-order" @click="startOver">Batalkan &amp; pesan ulang</button>
+      </div>
+
+      <!-- Sudah dibayar -->
+      <div v-else class="glass op-success">
         <div class="op-check">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
         </div>
-        <h2>Pesanan terkirim!</h2>
-        <p>Pesanan Anda untuk <b>Meja {{ done.table_number }}</b> sudah diteruskan ke dapur. Silakan tunggu di meja.</p>
+        <h2>Pembayaran diterima!</h2>
+        <p>Pesanan Anda untuk <b>Meja {{ done.table_number }}</b> sudah dibayar dan diteruskan ke dapur. Silakan tunggu di meja.</p>
         <div class="op-status">
           <span>Status</span>
           <b>{{ statusLabel }}</b>
+        </div>
+        <div class="op-status">
+          <span>Dibayar</span>
+          <b>{{ rupiah(done.total_amount) }}</b>
         </div>
         <button class="op-next" @click="startOver">Pesan Lagi</button>
       </div>
@@ -103,8 +139,8 @@
               <button class="op-oi-del" @click="lines.splice(i, 1)" aria-label="Hapus">×</button>
             </li>
           </ul>
-          <div class="op-order-total"><span>Total</span><b>{{ rupiah(grandTotal) }}</b></div>
-          <p class="op-note-total">Belum termasuk pajak &amp; biaya layanan — dihitung kasir saat menagih.</p>
+          <div class="op-order-total"><span>Subtotal</span><b>{{ rupiah(grandTotal) }}</b></div>
+          <p class="op-note-total">Pajak &amp; biaya layanan ditambahkan di langkah pembayaran.</p>
         </div>
 
         <!-- Identitas -->
@@ -186,14 +222,19 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
+import QRCode from 'qrcode'
 import { publicApi } from '@/api/public.js'
 
 const route = useRoute()
 const slug = route.params.slug
 
-// Nomor meja boleh datang dari QR (?meja=A5). Bila ada, field-nya dikunci
-// supaya tamu tidak sengaja memesan atas nama meja lain.
-const tableFromQr = String(route.query.meja || route.query.table || '').trim()
+// Nomor meja boleh datang dari QR. Beberapa bentuk penulisan diterima agar QR
+// yang dicetak mengikuti kebiasaan platform lain (mis. ?mode=dinein&tableNumber=2)
+// tetap bekerja. Bila ada, field-nya dikunci supaya tamu tidak sengaja memesan
+// atas nama meja lain.
+const tableFromQr = String(
+  route.query.meja || route.query.table || route.query.tableNumber || ''
+).trim()
 const lockedTable = !!tableFromQr
 
 const menu = ref(null)
@@ -203,6 +244,12 @@ const submitting = ref(false)
 const formError = ref('')
 const done = ref(null)
 const statusLabel = ref('Menunggu diproses')
+
+// Pembayaran: QRIS dinamis dengan nominal persis sebesar tagihan pesanan.
+const qrDataUrl = ref('')
+const isPaid = ref(false)
+const payExpired = ref(false)
+const isMockGateway = computed(() => done.value?.payment?.provider === 'mock')
 const activeCat = ref('')
 const searchQuery = ref('')
 
@@ -273,11 +320,40 @@ function confirmItem() {
 }
 
 function startOver() {
+  clearInterval(statusTimer)
   done.value = null
+  qrDataUrl.value = ''
+  isPaid.value = false
+  payExpired.value = false
+  statusLabel.value = 'Menunggu diproses'
   lines.value = []
   f.customer_name = ''
   f.notes = ''
   if (!lockedTable) f.table_number = ''
+}
+
+// QR digambar dari payload QRIS mentah milik penyedia, bukan dari URL gambar —
+// halaman tidak bergantung pada host luar yang bisa mati atau diblokir.
+async function renderQr(payload) {
+  try {
+    qrDataUrl.value = await QRCode.toDataURL(payload, {
+      width: 320,
+      margin: 1,
+      color: { dark: '#14271d', light: '#ffffff' },
+    })
+  } catch (e) {
+    qrDataUrl.value = ''
+  }
+}
+
+// Alat uji penyedia tiruan. Server hanya menerimanya saat gateway mock aktif,
+// jadi tombol ini tidak bisa melunasi tagihan sungguhan.
+async function simulatePaid() {
+  try {
+    await publicApi.simulatePay(slug, done.value.id)
+  } catch (e) {
+    formError.value = e?.response?.data?.error || 'Simulasi gagal.'
+  }
 }
 
 async function submit() {
@@ -299,6 +375,7 @@ async function submit() {
       })),
     })
     done.value = res.data
+    if (res.data?.payment?.qr_string) renderQr(res.data.payment.qr_string)
     pollStatus(res.data.id)
   } catch (e) {
     formError.value = e?.response?.data?.error || 'Gagal mengirim pesanan. Coba lagi.'
@@ -307,8 +384,12 @@ async function submit() {
   }
 }
 
-// Pantau sampai kasir memproses, lalu berhenti. Interval longgar karena ini
-// hanya informasi untuk tamu, bukan jalur yang menentukan pesanan masuk.
+// Pantau pembayaran lalu perkembangan pesanannya.
+//
+// Pesanan tertahan di `awaiting_payment` sampai penyedia mengonfirmasi uangnya
+// masuk; begitu lunas, server memindahkannya ke `new` dan POS boleh menariknya.
+// Jadi status pesanan itu sendiri sudah cukup menjadi penanda "sudah dibayar" —
+// halaman tidak pernah menyatakan lunas atas inisiatifnya sendiri.
 let statusTimer = null
 function pollStatus(id) {
   clearInterval(statusTimer)
@@ -316,15 +397,28 @@ function pollStatus(id) {
     try {
       const res = await publicApi.orderStatus(slug, id)
       const s = res.data?.status
-      if (s === 'confirmed') {
+      const pay = res.data?.payment_status
+
+      if (s !== 'awaiting_payment') isPaid.value = true
+
+      if (s === 'awaiting_payment') {
+        // QR mati sebelum tamu sempat bayar — hentikan polling dan minta
+        // pesan ulang, daripada membiarkan layar menunggu selamanya.
+        if (pay === 'expired' || pay === 'failed') {
+          payExpired.value = true
+          clearInterval(statusTimer)
+        }
+      } else if (s === 'confirmed') {
         statusLabel.value = 'Diterima dapur'
         clearInterval(statusTimer)
       } else if (s === 'rejected') {
         statusLabel.value = 'Ditolak — hubungi pramusaji'
         clearInterval(statusTimer)
+      } else {
+        statusLabel.value = 'Menunggu diproses kasir'
       }
     } catch { /* jaringan tamu putus — coba lagi di tick berikutnya */ }
-  }, 5000)
+  }, 4000)
 }
 
 onMounted(async () => {
@@ -436,6 +530,23 @@ onUnmounted(() => clearInterval(statusTimer))
 .op-btn { margin-left: auto; background: linear-gradient(145deg, #7eb89a, #5d9b78); color: #14271d; border: none; padding: .75rem 1.4rem; border-radius: .75rem; font-size: .92rem; font-weight: 800; cursor: pointer; }
 .op-btn:disabled { opacity: .5; cursor: not-allowed; }
 .op-next { width: 100%; margin-top: 1rem; background: linear-gradient(145deg, #7eb89a, #5d9b78); color: #14271d; border: none; padding: .85rem; border-radius: .8rem; font-size: .95rem; font-weight: 800; cursor: pointer; }
+
+/* Pembayaran QRIS */
+.op-pay { border-radius: 1rem; padding: 1.6rem 1.3rem; text-align: center; }
+.op-pay-eyebrow { font-size: .68rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: rgba(168,203,191,.8); }
+.op-pay-amount { font-size: 2rem; font-weight: 900; letter-spacing: -.02em; margin: .3rem 0 1.1rem; }
+.op-qr { display: inline-flex; align-items: center; justify-content: center; padding: .8rem; background: #fff; border-radius: .9rem; min-width: 200px; min-height: 200px; }
+.op-qr img { display: block; width: 100%; max-width: 240px; height: auto; }
+.op-qr--dead { opacity: .25; }
+.op-qr-load { color: #6b7c82; font-size: .85rem; }
+.op-pay-msg { font-size: .85rem; color: rgba(255,255,255,.65); margin-top: 1rem; line-height: 1.5; }
+.op-recap { margin-top: 1.3rem; padding-top: 1rem; border-top: 1px dashed rgba(255,255,255,.15); text-align: left; }
+.op-recap > div { display: flex; justify-content: space-between; font-size: .86rem; padding: .28rem 0; color: rgba(255,255,255,.72); }
+.op-recap b { font-weight: 700; color: rgba(255,255,255,.92); }
+.op-recap-total { margin-top: .4rem; padding-top: .5rem; border-top: 1px solid rgba(255,255,255,.14); font-size: 1rem !important; }
+.op-recap-total b { color: #9fd4ba !important; font-weight: 900; }
+.op-sim { background: rgba(255,255,255,.14); color: rgba(255,255,255,.85); }
+.op-cancel-order { width: 100%; margin-top: .6rem; background: none; border: none; color: rgba(255,255,255,.5); font-size: .82rem; font-weight: 600; cursor: pointer; padding: .6rem; }
 
 /* Sukses */
 .op-success { border-radius: 1rem; padding: 2rem 1.4rem; text-align: center; }

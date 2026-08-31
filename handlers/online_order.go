@@ -24,17 +24,30 @@ func PublicCreateOrder(c *fiber.Ctx) error {
 		"id":           order.ID,
 		"status":       order.Status,
 		"table_number": order.TableNumber,
+		"subtotal":     order.Subtotal,
+		"charges":      order.ChargeLines,
+		"total_amount": order.TotalAmount,
+		"payment":      order.Payment,
 	}})
 }
 
 // PublicOrderStatus — GET /public/outlets/:slug/orders/:orderId
 // Tamu memantau pesanannya tanpa login.
 func PublicOrderStatus(c *fiber.Ctx) error {
-	status, err := services.OnlineOrderStatus(c.Params("slug"), c.Params("orderId"))
+	info, err := services.OnlineOrderStatus(c.Params("slug"), c.Params("orderId"))
 	if err != nil {
 		return c.Status(404).JSON(models.APIResponse{Success: false, Error: err.Error()})
 	}
-	return c.JSON(models.APIResponse{Success: true, Data: fiber.Map{"status": status}})
+	return c.JSON(models.APIResponse{Success: true, Data: info})
+}
+
+// PublicSimulateOrderPaid — POST /public/outlets/:slug/orders/:orderId/simulate-paid
+// Alat uji; ditolak server kecuali penyedia pembayaran mock sedang aktif.
+func PublicSimulateOrderPaid(c *fiber.Ctx) error {
+	if err := services.SimulateOnlineOrderPaid(c.Params("slug"), c.Params("orderId")); err != nil {
+		return c.Status(403).JSON(models.APIResponse{Success: false, Error: err.Error()})
+	}
+	return c.JSON(models.APIResponse{Success: true, Data: fiber.Map{"paid": true}})
 }
 
 // GetPendingOnlineOrders — GET /outlets/:outletId/online-orders

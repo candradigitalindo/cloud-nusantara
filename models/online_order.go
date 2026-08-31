@@ -14,10 +14,14 @@ package models
 // Klaim yang tidak pernah dikonfirmasi (POS mati di tengah jalan) kedaluwarsa
 // dan kembali menjadi `new`, sehingga perangkat lain bisa mengambilnya.
 const (
-	OnlineOrderNew       = "new"
-	OnlineOrderClaimed   = "claimed"
-	OnlineOrderConfirmed = "confirmed"
-	OnlineOrderRejected  = "rejected"
+	// Pesanan baru dibuat dan menunggu tamu membayar QRIS-nya. Pada tahap ini
+	// pesanan TIDAK terlihat oleh POS — dapur tidak pernah memasak pesanan yang
+	// belum dibayar.
+	OnlineOrderAwaitingPayment = "awaiting_payment"
+	OnlineOrderNew             = "new"
+	OnlineOrderClaimed         = "claimed"
+	OnlineOrderConfirmed       = "confirmed"
+	OnlineOrderRejected        = "rejected"
 )
 
 // OnlineOrderAddon — add-on terpilih pada satu baris pesanan online.
@@ -46,7 +50,8 @@ type PublicOrderRequest struct {
 	Items         []OnlineOrderItem `json:"items"`
 }
 
-// OnlineOrder — bentuk yang ditarik POS.
+// OnlineOrder — bentuk yang ditarik POS sekaligus yang dikembalikan ke tamu
+// setelah memesan.
 type OnlineOrder struct {
 	ID            string            `json:"id"`
 	OutletID      string            `json:"outlet_id"`
@@ -57,4 +62,19 @@ type OnlineOrder struct {
 	Items         []OnlineOrderItem `json:"items"`
 	Status        string            `json:"status"`
 	CreatedAt     string            `json:"created_at"`
+
+	// Rincian tagihan. Dihitung cloud memakai daftar biaya yang dikirim POS
+	// supaya sama persis dengan tagihan yang nanti dihitung kasir.
+	Subtotal    float64      `json:"subtotal"`
+	ChargeLines []ChargeLine `json:"charges"`
+	TotalAmount float64      `json:"total_amount"`
+
+	// PaidAmount = nominal yang BENAR-BENAR diterima penyedia. POS mencatat
+	// angka ini, bukan TotalAmount, supaya selisih akibat konfigurasi biaya
+	// yang sempat berbeda muncul sebagai sisa tagihan alih-alih tertutup diam-diam.
+	PaidAmount float64 `json:"paid_amount"`
+
+	// Payment hanya terisi saat pesanan baru dibuat — berisi QR yang harus
+	// dipindai tamu.
+	Payment *QRISChargeResponse `json:"payment,omitempty"`
 }

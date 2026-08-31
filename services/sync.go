@@ -375,6 +375,24 @@ func ProcessBatchSync(outletID string, req models.BatchSyncRequest) models.Batch
 				}
 			}
 
+		case "additional_charge":
+			var chargeReq models.PushAdditionalChargeRequest
+			if err := json.Unmarshal(dataBytes, &chargeReq); err != nil {
+				result.Status = "failed"
+				result.Error = "Invalid additional charge data: " + err.Error()
+				resp.Failed++
+			} else {
+				result.LocalID = chargeReq.LocalID
+				if cloudID, err := SaveAdditionalCharge(outletID, chargeReq); err != nil {
+					result.Status = "failed"
+					result.Error = err.Error()
+					resp.Failed++
+				} else {
+					result.CloudID = cloudID
+					resp.Success++
+				}
+			}
+
 		case "product_addon":
 			var addonReq models.PushProductAddonRequest
 			if err := json.Unmarshal(dataBytes, &addonReq); err != nil {

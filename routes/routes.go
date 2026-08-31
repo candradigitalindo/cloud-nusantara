@@ -30,6 +30,7 @@ func Setup(app *fiber.App, cfg *config.Config) {
 
 	public.Post("/outlets/:slug/orders", handlers.PublicCreateOrder)
 	public.Get("/outlets/:slug/orders/:orderId", handlers.PublicOrderStatus)
+	public.Post("/outlets/:slug/orders/:orderId/simulate-paid", handlers.PublicSimulateOrderPaid)
 
 	// Callback penyedia pembayaran. Tanpa AuthOutlet — keasliannya dibuktikan
 	// tanda tangan yang diverifikasi adapter penyedia, bukan API key outlet.
