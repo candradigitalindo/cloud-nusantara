@@ -6,4 +6,8 @@ const publicClient = axios.create({ baseURL: '/api/v1', timeout: 20000 })
 export const publicApi = {
   menu:    (slug)       => publicClient.get(`/public/outlets/${slug}/menu`).then(r => r.data),
   reserve: (slug, data) => publicClient.post(`/public/outlets/${slug}/reservations`, data).then(r => r.data),
+
+  // Pemesanan mandiri tamu (QR dine-in)
+  order:       (slug, data) => publicClient.post(`/public/outlets/${slug}/orders`, data).then(r => r.data),
+  orderStatus: (slug, id)   => publicClient.get(`/public/outlets/${slug}/orders/${id}`).then(r => r.data),
 }

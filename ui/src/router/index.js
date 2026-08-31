@@ -53,6 +53,7 @@ const Assets              = () => import('@/pages/Assets.vue')
 const Reservations        = () => import('@/pages/Reservations.vue')
 const Customers           = () => import('@/pages/Customers.vue')
 const ReservePublic       = () => import('@/pages/ReservePublic.vue')
+const OrderPublic         = () => import('@/pages/OrderPublic.vue')
 const NotFound            = () => import('@/pages/NotFound.vue')
 const Forbidden           = () => import('@/pages/Forbidden.vue')
 const TaxReport           = () => import('@/pages/TaxReport.vue')
@@ -107,6 +108,15 @@ const routes = [
     name: 'ReservePublic',
     component: ReservePublic,
     meta: { title: 'Reservasi — Cloud POS' },
+  },
+
+  // ── Pemesanan mandiri tamu / QR dine-in (no auth) ───────
+  // Nomor meja boleh dititipkan lewat ?meja=A5 pada QR tiap meja.
+  {
+    path: '/o/:slug',
+    name: 'OrderPublic',
+    component: OrderPublic,
+    meta: { title: 'Pesan — Cloud POS' },
   },
 
   // ── Auth layout (no sidebar) ────────────────────────────

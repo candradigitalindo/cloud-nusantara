@@ -257,6 +257,28 @@ func RunMigrations() error {
 		// Pencarian tagihan pending yang bisa dipakai ulang saat kasir menekan
 		// "QRIS" dua kali untuk order yang sama.
 		`CREATE INDEX IF NOT EXISTS idx_qris_charges_order ON qris_charges(outlet_id, order_local_id, status)`,
+
+		// Pemesanan mandiri tamu (QR dine-in). Satu-satunya data yang mengalir
+		// cloud → POS: POS mem-polling, mengklaim (atomik), lalu mengonfirmasi
+		// setelah order meja benar-benar terbentuk.
+		`CREATE TABLE IF NOT EXISTS online_orders (
+			id VARCHAR(64) PRIMARY KEY,
+			outlet_id CHAR(26) NOT NULL REFERENCES outlets(id),
+			table_number VARCHAR(20) NOT NULL,
+			customer_name VARCHAR(100),
+			customer_phone VARCHAR(30),
+			notes VARCHAR(200),
+			items JSONB NOT NULL,
+			status VARCHAR(20) NOT NULL DEFAULT 'new',
+			claimed_by VARCHAR(80),
+			claimed_at TIMESTAMP,
+			local_order_id VARCHAR(50),
+			reject_reason VARCHAR(200),
+			created_at TIMESTAMP DEFAULT (now() AT TIME ZONE 'UTC'),
+			updated_at TIMESTAMP DEFAULT (now() AT TIME ZONE 'UTC')
+		)`,
+		// Penarikan POS selalu memfilter outlet + status + urut waktu masuk.
+		`CREATE INDEX IF NOT EXISTS idx_online_orders_pending ON online_orders(outlet_id, status, created_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_cloud_categories_outlet ON cloud_categories(outlet_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_cloud_analytics_outlet ON cloud_analytics(outlet_id, date)`,
 		`CREATE INDEX IF NOT EXISTS idx_sync_logs_outlet ON sync_logs(outlet_id, created_at)`,

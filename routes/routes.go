@@ -28,6 +28,9 @@ func Setup(app *fiber.App, cfg *config.Config) {
 	public.Get("/outlets/:slug/menu", handlers.PublicGetMenu)
 	public.Post("/outlets/:slug/reservations", handlers.PublicCreateReservation)
 
+	public.Post("/outlets/:slug/orders", handlers.PublicCreateOrder)
+	public.Get("/outlets/:slug/orders/:orderId", handlers.PublicOrderStatus)
+
 	// Callback penyedia pembayaran. Tanpa AuthOutlet — keasliannya dibuktikan
 	// tanda tangan yang diverifikasi adapter penyedia, bukan API key outlet.
 	api.Post("/webhooks/qris/:provider", handlers.QRISWebhook)
@@ -58,6 +61,12 @@ func Setup(app *fiber.App, cfg *config.Config) {
 	// Categories
 	outlet.Get("/categories", handlers.GetOutletCategories)
 	outlet.Put("/categories/:categoryId/printer", handlers.UpdateCategoryPrinter)
+
+	// Pemesanan mandiri tamu (QR dine-in) — ditarik POS
+	outlet.Get("/online-orders", handlers.GetPendingOnlineOrders)
+	outlet.Post("/online-orders/:orderId/claim", handlers.ClaimOnlineOrder)
+	outlet.Post("/online-orders/:orderId/confirm", handlers.ConfirmOnlineOrder)
+	outlet.Post("/online-orders/:orderId/reject", handlers.RejectOnlineOrder)
 
 	// QRIS terintegrasi
 	outlet.Get("/qris/info", handlers.GetPaymentGatewayInfo)
