@@ -125,7 +125,7 @@ func CreatePublicOrder(slug string, req models.PublicOrderRequest) (*models.Onli
 	_, err = database.DB.Exec(
 		`INSERT INTO online_orders (id, outlet_id, table_number, customer_name,
 			customer_phone, notes, items, status, total_amount, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, 'awaiting_payment', $8, NOW(), NOW())`,
+		VALUES ($1, $2, $3, $4, $5, $6, $7, 'awaiting_payment', $8, (now() AT TIME ZONE 'UTC'), (now() AT TIME ZONE 'UTC'))`,
 		id, outletID, trimTo(req.TableNumber, 20), trimTo(req.CustomerName, 100),
 		trimTo(req.CustomerPhone, 30), trimTo(req.Notes, 200), payload, total,
 	)
@@ -143,7 +143,7 @@ func CreatePublicOrder(slug string, req models.PublicOrderRequest) (*models.Onli
 		return nil, err
 	}
 	if _, err := database.DB.Exec(
-		`UPDATE online_orders SET qris_charge_id = $2, updated_at = NOW() WHERE id = $1`,
+		`UPDATE online_orders SET qris_charge_id = $2, updated_at = (now() AT TIME ZONE 'UTC') WHERE id = $1`,
 		id, charge.ChargeID,
 	); err != nil {
 		return nil, err
@@ -245,7 +245,7 @@ func PendingOnlineOrders(outletID string) ([]models.OnlineOrder, error) {
 		FROM online_orders
 		WHERE outlet_id = $1
 			AND (status = 'new'
-				OR (status = 'claimed' AND claimed_at < NOW() - INTERVAL '5 minutes'))
+				OR (status = 'claimed' AND claimed_at < (now() AT TIME ZONE 'UTC') - INTERVAL '5 minutes'))
 		ORDER BY created_at ASC LIMIT 50`,
 		outletID,
 	)
@@ -284,11 +284,11 @@ func PendingOnlineOrders(outletID string) ([]models.OnlineOrder, error) {
 func ClaimOnlineOrder(outletID, orderID, deviceID string) (bool, error) {
 	res, err := database.DB.Exec(
 		`UPDATE online_orders
-		SET status = 'claimed', claimed_by = $3, claimed_at = NOW(), updated_at = NOW()
+		SET status = 'claimed', claimed_by = $3, claimed_at = (now() AT TIME ZONE 'UTC'), updated_at = (now() AT TIME ZONE 'UTC')
 		WHERE outlet_id = $1 AND id = $2
 			AND (status = 'new'
 				OR (status = 'claimed'
-					AND (claimed_by = $3 OR claimed_at < NOW() - INTERVAL '5 minutes')))`,
+					AND (claimed_by = $3 OR claimed_at < (now() AT TIME ZONE 'UTC') - INTERVAL '5 minutes')))`,
 		outletID, orderID, deviceID,
 	)
 	if err != nil {
@@ -303,7 +303,7 @@ func ClaimOnlineOrder(outletID, orderID, deviceID string) (bool, error) {
 func ConfirmOnlineOrder(outletID, orderID, localOrderID string) error {
 	_, err := database.DB.Exec(
 		`UPDATE online_orders
-		SET status = 'confirmed', local_order_id = $3, updated_at = NOW()
+		SET status = 'confirmed', local_order_id = $3, updated_at = (now() AT TIME ZONE 'UTC')
 		WHERE outlet_id = $1 AND id = $2 AND status <> 'rejected'`,
 		outletID, orderID, nullStr(localOrderID),
 	)
@@ -315,7 +315,7 @@ func ConfirmOnlineOrder(outletID, orderID, localOrderID string) error {
 func RejectOnlineOrder(outletID, orderID, reason string) error {
 	_, err := database.DB.Exec(
 		`UPDATE online_orders
-		SET status = 'rejected', reject_reason = $3, updated_at = NOW()
+		SET status = 'rejected', reject_reason = $3, updated_at = (now() AT TIME ZONE 'UTC')
 		WHERE outlet_id = $1 AND id = $2 AND status <> 'confirmed'`,
 		outletID, orderID, nullStr(trimTo(reason, 200)),
 	)

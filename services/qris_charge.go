@@ -58,7 +58,7 @@ func CreateQRISCharge(outletID, orderLocalID string, amount float64, description
 	_, err = database.DB.Exec(
 		`INSERT INTO qris_charges (id, outlet_id, order_local_id, amount, provider,
 			provider_ref, qr_string, status, expires_at, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, NOW(), NOW())`,
+		VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, (now() AT TIME ZONE 'UTC'), (now() AT TIME ZONE 'UTC'))`,
 		chargeID, outletID, nullStr(orderLocalID), amount, gw.Name(),
 		res.ProviderRef, res.QRString, res.ExpiresAt.UTC(),
 	)
@@ -91,7 +91,7 @@ func findReusableCharge(outletID, orderLocalID string, amount float64) (*models.
 		`SELECT id, provider, qr_string, amount, status, expires_at
 		FROM qris_charges
 		WHERE outlet_id = $1 AND order_local_id = $2 AND status = 'pending'
-			AND amount = $3 AND expires_at > NOW()
+			AND amount = $3 AND expires_at > (now() AT TIME ZONE 'UTC')
 		ORDER BY created_at DESC LIMIT 1`,
 		outletID, orderLocalID, amount,
 	).Scan(&r.ChargeID, &r.Provider, &r.QRString, &r.Amount, &r.Status, &expires)
@@ -128,7 +128,7 @@ func GetQRISCharge(outletID, chargeID string) (*models.QRISChargeResponse, error
 
 	if r.Status == QRISPending && time.Now().UTC().After(expires.UTC()) {
 		if _, uerr := database.DB.Exec(
-			`UPDATE qris_charges SET status = 'expired', updated_at = NOW()
+			`UPDATE qris_charges SET status = 'expired', updated_at = (now() AT TIME ZONE 'UTC')
 			WHERE id = $1 AND status = 'pending'`, chargeID,
 		); uerr != nil {
 			log.Printf("tandai qris_charge %s expired: %v", chargeID, uerr)
@@ -161,7 +161,7 @@ func MarkQRISChargePaid(chargeID, status string) error {
 	}
 
 	res, err := database.DB.Exec(
-		`UPDATE qris_charges SET status = $1, paid_at = $2, updated_at = NOW()
+		`UPDATE qris_charges SET status = $1, paid_at = $2, updated_at = (now() AT TIME ZONE 'UTC')
 		WHERE id = $3 AND status = 'pending'`,
 		status, paidAt, chargeID,
 	)
@@ -199,7 +199,7 @@ func promoteOnlineOrderAfterPayment(chargeID string) error {
 	}
 	_, err := database.DB.Exec(
 		`UPDATE online_orders
-		SET status = 'new', paid_amount = $2, updated_at = NOW()
+		SET status = 'new', paid_amount = $2, updated_at = (now() AT TIME ZONE 'UTC')
 		WHERE qris_charge_id = $1 AND status = 'awaiting_payment'`,
 		chargeID, amount,
 	)
