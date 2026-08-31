@@ -51,6 +51,9 @@ type PublicProduct struct {
 	Name     string  `json:"name"`
 	Price    float64 `json:"price"`
 	PhotoURL string  `json:"photo_url"`
+	// Add-on aktif menu ini — pemesanan online menawarkan pilihan yang sama
+	// dengan kasir. Kosong bila menu tidak punya tambahan.
+	Addons []CloudProductAddon `json:"addons"`
 }
 
 type PublicCategory struct {

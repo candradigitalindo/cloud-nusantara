@@ -28,6 +28,10 @@ func Setup(app *fiber.App, cfg *config.Config) {
 	public.Get("/outlets/:slug/menu", handlers.PublicGetMenu)
 	public.Post("/outlets/:slug/reservations", handlers.PublicCreateReservation)
 
+	// Callback penyedia pembayaran. Tanpa AuthOutlet — keasliannya dibuktikan
+	// tanda tangan yang diverifikasi adapter penyedia, bukan API key outlet.
+	api.Post("/webhooks/qris/:provider", handlers.QRISWebhook)
+
 	// Outlet self-discovery: GET /api/v1/outlet/me — returns outlet info from API key alone
 	api.Get("/outlet/me", middleware.AuthOutlet(), func(c *fiber.Ctx) error {
 		return handlers.GetOutletInfo(c)
@@ -54,6 +58,12 @@ func Setup(app *fiber.App, cfg *config.Config) {
 	// Categories
 	outlet.Get("/categories", handlers.GetOutletCategories)
 	outlet.Put("/categories/:categoryId/printer", handlers.UpdateCategoryPrinter)
+
+	// QRIS terintegrasi
+	outlet.Get("/qris/info", handlers.GetPaymentGatewayInfo)
+	outlet.Post("/qris/charges", handlers.CreateQRISCharge)
+	outlet.Get("/qris/charges/:chargeId", handlers.GetQRISCharge)
+	outlet.Post("/qris/charges/:chargeId/simulate-paid", handlers.SimulateQRISPaid)
 
 	// Printers
 	outlet.Get("/printers", handlers.GetOutletPrinters)

@@ -373,6 +373,80 @@ func DeleteProduct(outletID, localID string) error {
 	return err
 }
 
+// SaveProductAddon menyimpan satu add-on dari sync batch POS. Idempoten per
+// (outlet_id, local_id) — kiriman ulang menimpa, bukan menggandakan.
+func SaveProductAddon(outletID string, req models.PushProductAddonRequest) (string, error) {
+	if req.ProductLocalID == "" {
+		return "", fmt.Errorf("product_local_id wajib diisi")
+	}
+	cloudID := req.LocalID
+	err := database.DB.QueryRow(
+		`INSERT INTO cloud_product_addons (id, local_id, outlet_id, product_local_id,
+			group_name, name, price, sort_order, is_active, version, updated_at, synced_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11, NOW()), NOW())
+		ON CONFLICT (outlet_id, local_id) DO UPDATE SET
+			product_local_id = EXCLUDED.product_local_id,
+			group_name = EXCLUDED.group_name,
+			name = EXCLUDED.name,
+			price = EXCLUDED.price,
+			sort_order = EXCLUDED.sort_order,
+			is_active = EXCLUDED.is_active,
+			-- Kiriman ulang menghidupkan kembali add-on yang sempat dihapus,
+			-- mengikuti keadaan terakhir di POS sebagai sumber kebenaran.
+			is_deleted = false,
+			version = EXCLUDED.version,
+			updated_at = NOW(),
+			synced_at = NOW()
+		RETURNING id`,
+		cloudID, cloudID, outletID, req.ProductLocalID,
+		req.GroupName, req.Name, req.Price, req.SortOrder, req.IsActive != 0,
+		req.Version, parseTime(req.UpdatedAt),
+	).Scan(&cloudID)
+	if err != nil {
+		return "", err
+	}
+	go logSync(outletID, "push_product_addon", "product_addon", 1, "success", "")
+	return cloudID, nil
+}
+
+func DeleteProductAddon(outletID, localID string) error {
+	_, err := database.DB.Exec(
+		`UPDATE cloud_product_addons SET is_deleted = true, updated_at = NOW()
+		WHERE outlet_id = $1 AND local_id = $2`,
+		outletID, localID,
+	)
+	return err
+}
+
+// GetProductAddons mengembalikan add-on AKTIF milik outlet, dikelompokkan per
+// product_local_id — dipakai menu publik dan pemesanan online agar pilihan yang
+// ditawarkan sama persis dengan yang ada di kasir.
+func GetProductAddons(outletID string) (map[string][]models.CloudProductAddon, error) {
+	rows, err := database.DB.Query(
+		`SELECT id, local_id, product_local_id, COALESCE(group_name,''), name,
+			price, sort_order, is_active
+		FROM cloud_product_addons
+		WHERE outlet_id = $1 AND is_deleted = false AND is_active = true
+		ORDER BY product_local_id, sort_order ASC, name ASC`,
+		outletID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make(map[string][]models.CloudProductAddon)
+	for rows.Next() {
+		var a models.CloudProductAddon
+		if err := rows.Scan(&a.ID, &a.LocalID, &a.ProductLocalID, &a.GroupName,
+			&a.Name, &a.Price, &a.SortOrder, &a.IsActive); err != nil {
+			return nil, err
+		}
+		out[a.ProductLocalID] = append(out[a.ProductLocalID], a)
+	}
+	return out, rows.Err()
+}
+
 func generateProductCode(outletID, productName string) string {
 	name := strings.TrimSpace(productName)
 	if name == "" {

@@ -375,6 +375,33 @@ func ProcessBatchSync(outletID string, req models.BatchSyncRequest) models.Batch
 				}
 			}
 
+		case "product_addon":
+			var addonReq models.PushProductAddonRequest
+			if err := json.Unmarshal(dataBytes, &addonReq); err != nil {
+				result.Status = "failed"
+				result.Error = "Invalid product addon data: " + err.Error()
+				resp.Failed++
+			} else {
+				result.LocalID = addonReq.LocalID
+				if item.Operation == "delete" {
+					if err := DeleteProductAddon(outletID, addonReq.LocalID); err != nil {
+						result.Status = "failed"
+						result.Error = err.Error()
+						resp.Failed++
+					} else {
+						result.CloudID = addonReq.LocalID
+						resp.Success++
+					}
+				} else if cloudID, err := SaveProductAddon(outletID, addonReq); err != nil {
+					result.Status = "failed"
+					result.Error = err.Error()
+					resp.Failed++
+				} else {
+					result.CloudID = cloudID
+					resp.Success++
+				}
+			}
+
 		case "category":
 			dataMap := make(map[string]interface{})
 			if err := json.Unmarshal(dataBytes, &dataMap); err != nil {

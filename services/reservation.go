@@ -3,6 +3,7 @@ package services
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 
 	"cloud-pos/database"
@@ -242,6 +243,16 @@ func GetPublicMenu(slug string) (*models.PublicMenu, error) {
 	}
 	defer rows.Close()
 
+	// Add-on diambil sekali untuk seluruh outlet lalu dipetakan per produk —
+	// menghindari satu query per menu saat daftar digambar.
+	addonsByProduct, aerr := GetProductAddons(outletID)
+	if aerr != nil {
+		// Menu tetap tampil tanpa add-on daripada gagal total: pelanggan masih
+		// bisa memesan menu dasarnya.
+		log.Printf("GetProductAddons gagal untuk outlet %s: %v", outletID, aerr)
+		addonsByProduct = map[string][]models.CloudProductAddon{}
+	}
+
 	menu := &models.PublicMenu{OutletID: outletID, OutletName: outletName, Slug: slug, Categories: []models.PublicCategory{}}
 	idxByCat := map[string]int{}
 	for rows.Next() {
@@ -249,6 +260,10 @@ func GetPublicMenu(slug string) (*models.PublicMenu, error) {
 		var p models.PublicProduct
 		if err := rows.Scan(&cat, &p.ID, &p.Name, &p.Price, &p.PhotoURL); err != nil {
 			return nil, err
+		}
+		p.Addons = addonsByProduct[p.ID]
+		if p.Addons == nil {
+			p.Addons = []models.CloudProductAddon{}
 		}
 		i, ok := idxByCat[cat]
 		if !ok {
