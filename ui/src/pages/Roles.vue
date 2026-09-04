@@ -366,9 +366,17 @@ const REDIRECT_GROUPS = [
     { value: '/outlets',      label: 'Outlet',       perm: 'outlets.view' },
     { value: '/work-units',   label: 'Unit Kerja',   perm: 'workunits.view' },
     { value: '/warehouses',   label: 'Gudang',       perm: 'warehouses.view' },
-    { value: '/perlengkapan', label: 'Perlengkapan', perm: 'assets.view' },
     { value: '/roles',        label: 'Role & Hak Akses', perm: 'roles.view' },
     { value: '/app-pos',      label: 'App POS',      perm: 'appfiles.view' },
+  ]},
+  { category: 'Aset', options: [
+    { value: '/aset/dashboard',   label: 'Dashboard Aset',    perm: 'assets.dashboard.view' },
+    { value: '/aset/daftar',      label: 'Daftar Aset',       perm: 'assets.view' },
+    { value: '/aset/perolehan',   label: 'Histori Perolehan', perm: 'assets.acquisition.view' },
+    { value: '/aset/perawatan',   label: 'Perawatan',         perm: 'assets.view' },
+    { value: '/aset/mutasi',      label: 'Mutasi Antar Outlet', perm: 'assets.transfer.view' },
+    { value: '/aset/penyusutan',  label: 'Penyusutan',        perm: 'assets.depreciation.view' },
+    { value: '/aset/penghapusan', label: 'Penghapusan',       perm: 'assets.disposal.view' },
   ]},
   { category: 'Produk', options: [
     { value: '/products', label: 'Produk & Kategori', perm: 'products.view' },

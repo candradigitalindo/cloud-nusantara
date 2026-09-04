@@ -26,6 +26,13 @@ var AllPermissions = []string{
 	"appfiles.view", "appfiles.create", "appfiles.delete",
 	"assets.view", "assets.create", "assets.update", "assets.delete",
 
+	// Aset (modul tersendiri: siklus hidup perolehan → mutasi → penghapusan)
+	"assets.dashboard.view",
+	"assets.acquisition.view", "assets.acquisition.manage",
+	"assets.transfer.view", "assets.transfer.manage",
+	"assets.depreciation.view",
+	"assets.disposal.view", "assets.disposal.manage",
+
 	// Produk
 	"products.view", "products.create", "products.update", "products.delete",
 

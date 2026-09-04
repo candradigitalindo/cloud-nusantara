@@ -9,13 +9,25 @@ import (
 
 func ListAssets(c *fiber.Ctx) error {
 	assets, err := services.ListAssets(
-		c.Query("outlet_id"), c.Query("search"), c.Query("condition"), getOutletScope(c))
+		c.Query("outlet_id"), c.Query("search"), c.Query("condition"), c.Query("due"),
+		c.Query("status"), getOutletScope(c))
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
 			Success: false, Error: "Gagal memuat aset: " + err.Error(),
 		})
 	}
 	return c.JSON(models.APIResponse{Success: true, Data: assets})
+}
+
+// AssetsSummary — kartu KPI halaman Perlengkapan (jumlah, nilai, status jadwal).
+func AssetsSummary(c *fiber.Ctx) error {
+	s, err := services.AssetSummaryStats(c.Query("outlet_id"), getOutletScope(c))
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
+			Success: false, Error: "Gagal memuat ringkasan aset: " + err.Error(),
+		})
+	}
+	return c.JSON(models.APIResponse{Success: true, Data: s})
 }
 
 func GetAsset(c *fiber.Ctx) error {

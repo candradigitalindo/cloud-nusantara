@@ -48,16 +48,20 @@ func main() {
 	// PPIC: evaluasi alert harian (expired/ROP) + broadcast SSE ke dashboard.
 	services.StartPpicScheduler()
 
+	// Perlengkapan: evaluasi jadwal perawatan harian (terlambat / segera jatuh
+	// tempo) + broadcast SSE ke halaman Perlengkapan.
+	services.StartAssetScheduler()
+
 	// Pembayaran QRIS: pilih penyedia dari PAYMENT_GATEWAY_PROVIDER.
 	// Default "mock" — alur kasir bisa dijalankan penuh sebelum akun penyedia
 	// asli tersedia, tanpa jalur produksi yang bisa melunasi tagihan palsu.
 	services.InitPaymentGateway()
 
 	app := fiber.New(fiber.Config{
-		AppName:        "Nusantara POS Cloud API v1.0.0",
-		BodyLimit:      200 * 1024 * 1024,
-		ServerHeader:   "NusantaraPOS-Cloud",
-		UnescapePath:   true,
+		AppName:      "Nusantara POS Cloud API v1.0.0",
+		BodyLimit:    200 * 1024 * 1024,
+		ServerHeader: "NusantaraPOS-Cloud",
+		UnescapePath: true,
 		ErrorHandler: func(c *fiber.Ctx, err error) error {
 			code := fiber.StatusInternalServerError
 			if e, ok := err.(*fiber.Error); ok {

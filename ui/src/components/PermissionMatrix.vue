@@ -138,7 +138,6 @@ const CATEGORIES = [
       { type: 'crud', module: 'outlets', label: 'Outlet', icon: IC.outlet },
       { type: 'crud', module: 'workunits', label: 'Unit Kerja', icon: IC.workunit },
       { type: 'crud', module: 'warehouses', label: 'Gudang', icon: IC.warehouse },
-      { type: 'crud', module: 'assets', label: 'Perlengkapan & Perawatan', icon: IC.warehouse },
       { type: 'crud', module: 'roles', label: 'Role & Hak Akses', icon: IC.shield },
       { type: 'crud', module: 'appfiles', label: 'App POS', icon: IC.product, ops: ['view', 'create', 'delete'] },
     ],
@@ -192,6 +191,35 @@ const CATEGORIES = [
         ],
       },
       { type: 'crud', module: 'vendors', label: 'Vendor', icon: IC.vendor },
+    ],
+  },
+  {
+    label: 'Aset', icon: IC.warehouse,
+    items: [
+      { type: 'single', key: 'assets.dashboard.view', label: 'Dashboard Aset', icon: IC.gauge },
+      { type: 'crud', module: 'assets', label: 'Daftar Aset & Perawatan', icon: IC.warehouse },
+      {
+        type: 'toggles', label: 'Histori Perolehan', icon: IC.cart,
+        toggles: [
+          { key: 'assets.acquisition.view',   label: 'Lihat' },
+          { key: 'assets.acquisition.manage', label: 'Catat/Hapus' },
+        ],
+      },
+      {
+        type: 'toggles', label: 'Mutasi Antar Outlet', icon: IC.workunit,
+        toggles: [
+          { key: 'assets.transfer.view',   label: 'Lihat' },
+          { key: 'assets.transfer.manage', label: 'Pindahkan' },
+        ],
+      },
+      { type: 'single', key: 'assets.depreciation.view', label: 'Penyusutan & Nilai Buku', icon: IC.finance },
+      {
+        type: 'toggles', label: 'Penghapusan Aset', icon: IC.waste,
+        toggles: [
+          { key: 'assets.disposal.view',   label: 'Lihat' },
+          { key: 'assets.disposal.manage', label: 'Hapus/Batalkan' },
+        ],
+      },
     ],
   },
   {

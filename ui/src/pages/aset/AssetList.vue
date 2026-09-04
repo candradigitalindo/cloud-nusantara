@@ -3,21 +3,52 @@
     <!-- Header -->
     <div class="flex items-start justify-between flex-wrap gap-3">
       <div>
-        <h1 class="text-xl font-bold text-gray-900">Manajemen Perlengkapan</h1>
-        <p class="text-sm text-gray-500 mt-0.5">Inventaris barang (meja, kursi, dll) beserta histori perawatannya.</p>
+        <h1 class="text-xl font-bold text-gray-900">Daftar Aset</h1>
+        <p class="text-sm text-gray-500 mt-0.5">Register aset per outlet — identitas, kondisi, nilai, dan jadwal perawatan.</p>
       </div>
-      <AppButton v-if="canCreate" @click="openCreate">+ Tambah Perlengkapan</AppButton>
+      <AppButton v-if="canCreate" @click="openCreate">+ Tambah Aset</AppButton>
     </div>
 
     <AppAlert type="error" :message="errorMsg" />
 
+    <!-- Ringkasan — angka jadwal perawatan bisa diklik untuk menyaring daftar -->
+    <div v-if="summary" class="kpi-grid">
+      <div class="kpi kpi--slate">
+        <div class="kpi-label">Total Perlengkapan</div>
+        <div class="kpi-val">{{ summary.total_assets }}</div>
+        <div class="kpi-sub">{{ summary.total_quantity }} unit · {{ formatRupiah(summary.total_value) }} nilai perolehan</div>
+      </div>
+
+      <button type="button" class="kpi kpi--btn" :class="summary.overdue > 0 ? 'kpi--red' : 'kpi--ok'" @click="toggleDue('overdue')">
+        <div class="kpi-label">Perawatan Terlambat<span v-if="filterDue === 'overdue'" class="kpi-on">disaring</span></div>
+        <div class="kpi-val">{{ summary.overdue }}</div>
+        <div class="kpi-sub">lewat dari jadwal berikutnya</div>
+      </button>
+
+      <button type="button" class="kpi kpi--btn" :class="summary.due_soon > 0 ? 'kpi--amber' : 'kpi--ok'" @click="toggleDue('due_soon')">
+        <div class="kpi-label">Jatuh Tempo ≤{{ summary.due_soon_days }} Hari<span v-if="filterDue === 'due_soon'" class="kpi-on">disaring</span></div>
+        <div class="kpi-val">{{ summary.due_soon }}</div>
+        <div class="kpi-sub">{{ summary.scheduled }} terjadwal lebih jauh · {{ summary.unscheduled }} belum dijadwalkan</div>
+      </button>
+
+      <div class="kpi" :class="summary.needs_attention > 0 ? 'kpi--blue' : 'kpi--ok'">
+        <div class="kpi-label">Perlu Perhatian</div>
+        <div class="kpi-val">{{ summary.needs_attention }}</div>
+        <div class="kpi-sub">kondisi selain baik</div>
+      </div>
+    </div>
+
     <!-- Filters -->
     <AppCard>
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <SearchSelect v-model="filterOutlet" :options="outletFilterOptions" placeholder="Semua outlet" searchPlaceholder="Cari outlet…" @change="load" />
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <SearchSelect v-model="filterOutlet" :options="outletFilterOptions" placeholder="Semua outlet" searchPlaceholder="Cari outlet…" @change="loadAll" />
         <select v-model="filterCondition" @change="load" class="form-input">
           <option value="">Semua kondisi</option>
           <option v-for="(lbl, key) in CONDITIONS" :key="key" :value="key">{{ lbl }}</option>
+        </select>
+        <select v-model="filterDue" @change="load" class="form-input">
+          <option value="">Semua jadwal perawatan</option>
+          <option v-for="(lbl, key) in DUE_FILTERS" :key="key" :value="key">{{ lbl }}</option>
         </select>
         <input v-model="search" @input="debouncedLoad" type="search" placeholder="Cari nama / kode / kategori…" class="form-input" />
       </div>
@@ -28,7 +59,7 @@
       <!-- Mobile cards -->
       <div class="sm:hidden">
         <div v-if="loading" class="p-6 text-center text-sm text-gray-400">Memuat…</div>
-        <div v-else-if="!assets.length" class="p-6 text-center text-sm text-gray-400">Belum ada perlengkapan.</div>
+        <div v-else-if="!assets.length" class="p-6 text-center text-sm text-gray-400">Belum ada aset.</div>
         <ul v-else class="divide-y divide-gray-100">
           <li v-for="a in assets" :key="a.id" class="p-4 space-y-2">
             <div class="flex items-start justify-between gap-2">
@@ -44,6 +75,11 @@
             </div>
             <p class="text-xs text-gray-500">{{ a.outlet_name }}<span v-if="a.location"> · {{ a.location }}</span></p>
             <p class="text-xs text-gray-500">Perawatan: {{ a.maintenance_count }}× · Terakhir: {{ a.last_maintenance ? formatDateStr(a.last_maintenance) : '—' }}</p>
+            <p class="text-xs text-gray-500 flex items-center gap-1.5 flex-wrap">
+              <span>Berikutnya: {{ a.next_due_date ? formatDateStr(a.next_due_date) : '—' }}</span>
+              <span v-if="a.due_status !== 'none'" class="due-badge" :class="dueCls(a.due_status)">{{ dueText(a) }}</span>
+              <span v-else class="due-badge due-none">Belum dijadwalkan</span>
+            </p>
             <div class="flex gap-2 pt-1">
               <button @click="openHistory(a)" class="flex-1 text-center text-xs font-medium px-2 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100">Riwayat</button>
               <button v-if="canUpdate" @click="openEdit(a)" class="flex-1 text-center text-xs font-medium px-2 py-1.5 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200">Edit</button>
@@ -54,7 +90,7 @@
       </div>
 
       <!-- Desktop table -->
-      <AppTable class="hidden sm:block" :columns="COLUMNS" :rows="assets" :loading="loading" emptyText="Belum ada perlengkapan. Tambahkan di kanan atas.">
+      <AppTable class="hidden sm:block" :columns="COLUMNS" :rows="assets" :loading="loading" emptyText="Belum ada aset. Tambahkan di kanan atas.">
         <template #cell-name="{ row }">
           <div>
             <p class="font-medium text-gray-900">{{ row.name }}</p>
@@ -68,6 +104,13 @@
         <template #cell-maintenance="{ row }">
           <span class="text-sm">{{ row.maintenance_count }}×</span>
           <span class="text-xs text-gray-400 block">{{ row.last_maintenance ? formatDateStr(row.last_maintenance) : 'belum ada' }}</span>
+        </template>
+        <template #cell-due="{ row }">
+          <template v-if="row.due_status !== 'none'">
+            <span class="due-badge" :class="dueCls(row.due_status)">{{ dueText(row) }}</span>
+            <span class="text-xs text-gray-400 block mt-0.5">{{ formatDateStr(row.next_due_date) }}</span>
+          </template>
+          <span v-else class="due-badge due-none">Belum dijadwalkan</span>
         </template>
         <template #cell-actions="{ row }">
           <div class="flex items-center gap-1 justify-end">
@@ -119,9 +162,15 @@
             <option v-for="(lbl, key) in CONDITIONS" :key="key" :value="key">{{ lbl }}</option>
           </select>
         </div>
-        <div>
-          <label class="lbl">Lokasi / Ruang</label>
-          <input v-model="form.location" class="form-input" placeholder="mis. Lantai 1 – Area Indoor" />
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="lbl">Lokasi / Ruang</label>
+            <input v-model="form.location" class="form-input" placeholder="mis. Lantai 1 – Area Indoor" />
+          </div>
+          <div>
+            <label class="lbl">Nomor Seri</label>
+            <input v-model="form.serial_number" class="form-input" placeholder="Opsional" />
+          </div>
         </div>
         <div class="grid grid-cols-2 gap-3">
           <div>
@@ -129,10 +178,23 @@
             <input v-model="form.purchase_date" type="date" class="form-input" />
           </div>
           <div>
-            <label class="lbl">Harga Beli</label>
+            <label class="lbl">Harga Beli <span class="text-gray-400 font-normal">per unit</span></label>
             <input v-model.number="form.purchase_price" type="number" min="0" class="form-input" placeholder="0" />
           </div>
         </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="lbl">Umur Ekonomis <span class="text-gray-400 font-normal">bulan</span></label>
+            <input v-model.number="form.useful_life_months" type="number" min="0" class="form-input" placeholder="0 = tidak disusutkan" />
+          </div>
+          <div>
+            <label class="lbl">Nilai Residu</label>
+            <input v-model.number="form.residual_value" type="number" min="0" class="form-input" placeholder="0" />
+          </div>
+        </div>
+        <p v-if="!editing" class="text-xs text-gray-500 -mt-1">
+          Perolehan pertama dicatat otomatis dari tanggal &amp; harga beli di atas.
+        </p>
         <div>
           <label class="lbl">Catatan</label>
           <textarea v-model="form.notes" rows="2" class="form-input" placeholder="Opsional"></textarea>
@@ -234,11 +296,13 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { assetsApi } from '@/api/assets.js'
 import { outletsApi } from '@/api/outlets.js'
 import { useToastStore } from '@/stores/toast.js'
 import { useAuthStore } from '@/stores/auth.js'
 import { formatRupiah, formatDateStr, todayDateString } from '@/utils/format.js'
+import { useRealtime } from '@/utils/realtime.js'
 import AppCard   from '@/components/ui/AppCard.vue'
 import AppTable  from '@/components/ui/AppTable.vue'
 import AppAlert  from '@/components/ui/AppAlert.vue'
@@ -254,6 +318,12 @@ const canDelete = auth.hasPermission('assets.delete')
 
 const CONDITIONS = { baik: 'Baik', rusak_ringan: 'Rusak Ringan', rusak_berat: 'Rusak Berat', perbaikan: 'Dalam Perbaikan' }
 const MTYPES = { rutin: 'Rutin', perbaikan: 'Perbaikan', penggantian: 'Penggantian Part', inspeksi: 'Inspeksi' }
+const DUE_FILTERS = {
+  overdue: 'Terlambat',
+  due_soon: 'Jatuh tempo ≤7 hari',
+  scheduled: 'Terjadwal (>7 hari)',
+  none: 'Belum dijadwalkan',
+}
 function condCls(c) {
   return {
     'cond-baik': c === 'baik',
@@ -261,6 +331,16 @@ function condCls(c) {
     'cond-berat': c === 'rusak_berat',
     'cond-perbaikan': c === 'perbaikan',
   }
+}
+function dueCls(s) {
+  return { 'due-overdue': s === 'overdue', 'due-soon': s === 'due_soon', 'due-scheduled': s === 'scheduled' }
+}
+// Jarak hari dihitung server (zona waktu server), supaya tidak ikut jam browser.
+function dueText(a) {
+  const d = a.due_in_days
+  if (d < 0) return `Terlambat ${Math.abs(d)} hari`
+  if (d === 0) return 'Jatuh tempo hari ini'
+  return `${d} hari lagi`
 }
 
 const COLUMNS = [
@@ -271,15 +351,20 @@ const COLUMNS = [
   { key: 'condition',   label: 'Kondisi' },
   { key: 'location',    label: 'Lokasi' },
   { key: 'maintenance', label: 'Perawatan' },
+  { key: 'due',         label: 'Jadwal Berikutnya' },
   { key: 'actions',     label: '' },
 ]
 
 const assets = ref([])
 const outlets = ref([])
+const summary = ref(null)
 const loading = ref(false)
 const errorMsg = ref('')
 const filterOutlet = ref('')
 const filterCondition = ref('')
+// Dashboard menautkan ke sini dengan ?due=overdue / due_soon.
+const route = useRoute()
+const filterDue = ref(DUE_FILTERS[route.query.due] ? String(route.query.due) : '')
 const search = ref('')
 
 const outletFilterOptions = computed(() => [{ id: '', name: 'Semua outlet' }, ...outlets.value])
@@ -293,6 +378,7 @@ async function load() {
     const data = await assetsApi.list({
       outlet_id: filterOutlet.value || undefined,
       condition: filterCondition.value || undefined,
+      due: filterDue.value || undefined,
       search: search.value.trim() || undefined,
     })
     assets.value = asArray(data)
@@ -304,6 +390,24 @@ async function load() {
 }
 let _t = null
 function debouncedLoad() { clearTimeout(_t); _t = setTimeout(load, 350) }
+
+// Ringkasan hanya mengikuti outlet — bukan filter kondisi/jadwal/pencarian,
+// supaya kartu KPI tetap menjadi acuan tetap saat daftar sedang disaring.
+async function loadSummary() {
+  try {
+    summary.value = await assetsApi.summary({ outlet_id: filterOutlet.value || undefined })
+  } catch { summary.value = null }
+}
+async function loadAll() { await Promise.all([load(), loadSummary()]) }
+
+function toggleDue(status) {
+  filterDue.value = filterDue.value === status ? '' : status
+  load()
+}
+
+// Jadwal berpindah status di pergantian hari — server menyiarkan asset_alert
+// setelah evaluasi harian, halaman menyegar sendiri tanpa perlu di-refresh.
+useRealtime(['asset_alert'], loadAll)
 
 async function loadOutlets() {
   try {
@@ -318,12 +422,21 @@ const editing = ref(null)
 const saving = ref(false)
 const form = ref({})
 function blankForm() {
-  return { outlet_id: filterOutlet.value || '', code: '', name: '', category: '', quantity: 1, unit: 'unit', condition: 'baik', location: '', purchase_date: '', purchase_price: 0, notes: '' }
+  return {
+    outlet_id: filterOutlet.value || '', code: '', name: '', category: '', quantity: 1, unit: 'unit',
+    condition: 'baik', location: '', purchase_date: todayDateString(), purchase_price: 0, notes: '',
+    serial_number: '', useful_life_months: 0, residual_value: 0,
+  }
 }
 function openCreate() { editing.value = null; form.value = blankForm(); assetModal.value = true }
 function openEdit(a) {
   editing.value = a
-  form.value = { outlet_id: a.outlet_id, code: a.code, name: a.name, category: a.category, quantity: a.quantity, unit: a.unit, condition: a.condition, location: a.location, purchase_date: a.purchase_date || '', purchase_price: a.purchase_price, notes: a.notes }
+  form.value = {
+    outlet_id: a.outlet_id, code: a.code, name: a.name, category: a.category, quantity: a.quantity,
+    unit: a.unit, condition: a.condition, location: a.location, purchase_date: a.purchase_date || '',
+    purchase_price: a.purchase_price, notes: a.notes, serial_number: a.serial_number || '',
+    useful_life_months: a.useful_life_months || 0, residual_value: a.residual_value || 0,
+  }
   assetModal.value = true
 }
 async function saveAsset() {
@@ -335,12 +448,12 @@ async function saveAsset() {
     else await assetsApi.create(form.value)
     toast.success(editing.value ? 'Perlengkapan diperbarui' : 'Perlengkapan ditambahkan')
     assetModal.value = false
-    await load()
+    await loadAll()
   } catch (e) { toast.error(e?.message || 'Gagal menyimpan') } finally { saving.value = false }
 }
 async function confirmDelete(a) {
   if (!window.confirm(`Hapus perlengkapan "${a.name}"? Histori perawatannya tetap tersimpan namun perlengkapan tak lagi tampil.`)) return
-  try { await assetsApi.remove(a.id); toast.success('Perlengkapan dihapus'); await load() }
+  try { await assetsApi.remove(a.id); toast.success('Perlengkapan dihapus'); await loadAll() }
   catch (e) { toast.error(e?.message || 'Gagal menghapus') }
 }
 
@@ -371,7 +484,7 @@ async function saveMaintenance() {
     toast.success('Perawatan dicatat')
     mForm.value = blankM()
     history.value = asArray(await assetsApi.maintenances(activeAsset.value.id))
-    await load() // refresh count/last/condition in the list
+    await loadAll() // refresh count/last/kondisi/jadwal di daftar + ringkasan
     const fresh = assets.value.find(x => x.id === activeAsset.value.id)
     if (fresh) activeAsset.value = fresh
   } catch (e) { toast.error(e?.message || 'Gagal menyimpan perawatan') } finally { savingM.value = false }
@@ -381,11 +494,14 @@ async function deleteMaintenance(m) {
   try {
     await assetsApi.removeMaintenance(activeAsset.value.id, m.id)
     history.value = history.value.filter(x => x.id !== m.id)
-    await load()
+    await loadAll()
+    // Menghapus catatan terbaru bisa mengubah jadwal berikutnya — segarkan kartu aktif.
+    const fresh = assets.value.find(x => x.id === activeAsset.value.id)
+    if (fresh) activeAsset.value = fresh
   } catch (e) { toast.error(e?.message || 'Gagal menghapus') }
 }
 
-onMounted(async () => { await loadOutlets(); await load() })
+onMounted(async () => { await loadOutlets(); await loadAll() })
 </script>
 
 <style scoped>
@@ -405,4 +521,32 @@ onMounted(async () => { await loadOutlets(); await load() })
 .cond-perbaikan { background: rgba(59,130,246,.13); color: #1d4ed8; }
 
 .mtype-badge { display: inline-block; padding: .05rem .45rem; border-radius: 999px; font-size: .65rem; font-weight: 700; background: rgba(99,102,241,.12); color: #4338ca; }
+
+/* ── Kartu ringkasan ── */
+.kpi-grid { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+.kpi {
+  border-radius: .85rem; padding: .85rem 1rem; background: #fff; text-align: left;
+  border: 1px solid rgba(0,0,0,.07); box-shadow: 0 1px 2px rgba(16,24,40,.04);
+}
+.kpi--btn { cursor: pointer; transition: transform .12s ease, box-shadow .12s ease; }
+.kpi--btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(16,24,40,.09); }
+.kpi-label { font-size: .7rem; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: .02em; }
+.kpi-val { font-size: 1.5rem; font-weight: 800; color: #111827; line-height: 1.2; margin-top: .15rem; }
+.kpi-sub { font-size: .7rem; color: #6b7280; margin-top: .1rem; }
+.kpi-on { margin-left: .35rem; padding: .05rem .35rem; border-radius: 999px; background: rgba(17,24,39,.08); color: #374151; font-size: .6rem; }
+.kpi--slate { background: linear-gradient(180deg, #fff, #f8fafc); }
+.kpi--ok    { border-color: rgba(16,185,129,.25); background: linear-gradient(180deg, #fff, rgba(16,185,129,.05)); }
+.kpi--red   { border-color: rgba(239,68,68,.3);  background: linear-gradient(180deg, #fff, rgba(239,68,68,.07)); }
+.kpi--red .kpi-val { color: #b91c1c; }
+.kpi--amber { border-color: rgba(245,158,11,.35); background: linear-gradient(180deg, #fff, rgba(245,158,11,.08)); }
+.kpi--amber .kpi-val { color: #b45309; }
+.kpi--blue  { border-color: rgba(59,130,246,.3); background: linear-gradient(180deg, #fff, rgba(59,130,246,.06)); }
+.kpi--blue .kpi-val { color: #1d4ed8; }
+
+/* ── Badge jadwal perawatan ── */
+.due-badge { display: inline-block; padding: .12rem .5rem; border-radius: 999px; font-size: .68rem; font-weight: 700; white-space: nowrap; }
+.due-overdue { background: rgba(239,68,68,.13); color: #b91c1c; }
+.due-soon { background: rgba(245,158,11,.15); color: #b45309; }
+.due-scheduled { background: rgba(16,185,129,.13); color: #047857; }
+.due-none { background: rgba(107,114,128,.12); color: #4b5563; }
 </style>

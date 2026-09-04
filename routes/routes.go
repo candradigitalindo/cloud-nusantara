@@ -270,6 +270,28 @@ func Setup(app *fiber.App, cfg *config.Config) {
 	admin.Get("/vendors/:id/purchases", middleware.RequirePermission("vendors.view"), handlers.ListVendorPurchases)
 	// Manajemen Aset + histori perawatan (scoped per outlet)
 	admin.Get("/assets", middleware.RequirePermission("assets.view"), handlers.ListAssets)
+	// Rute statis di bawah /assets WAJIB didaftarkan sebelum /assets/:id —
+	// kalau tidak, "summary"/"dashboard"/dst. tertangkap sebagai id aset.
+	admin.Get("/assets/summary", middleware.RequirePermission("assets.view"), handlers.AssetsSummary)
+	admin.Get("/assets/dashboard", middleware.RequirePermission("assets.dashboard.view"), handlers.AssetDashboard)
+
+	// Riwayat perawatan lintas aset
+	admin.Get("/assets/maintenances", middleware.RequirePermission("assets.view"), handlers.ListAllAssetMaintenances)
+
+	// Histori perolehan
+	admin.Get("/assets/acquisitions", middleware.RequirePermission("assets.acquisition.view"), handlers.ListAssetAcquisitions)
+	admin.Post("/assets/acquisitions", middleware.RequirePermission("assets.acquisition.manage"), handlers.AddAssetAcquisition)
+	admin.Delete("/assets/acquisitions/:id", middleware.RequirePermission("assets.acquisition.manage"), handlers.DeleteAssetAcquisition)
+
+	// Mutasi antar outlet
+	admin.Get("/assets/transfers", middleware.RequirePermission("assets.transfer.view"), handlers.ListAssetTransfers)
+	admin.Post("/assets/transfers", middleware.RequirePermission("assets.transfer.manage"), handlers.TransferAsset)
+
+	// Penghapusan aset
+	admin.Get("/assets/disposals", middleware.RequirePermission("assets.disposal.view"), handlers.ListAssetDisposals)
+	admin.Post("/assets/disposals", middleware.RequirePermission("assets.disposal.manage"), handlers.DisposeAsset)
+	admin.Delete("/assets/disposals/:id", middleware.RequirePermission("assets.disposal.manage"), handlers.RestoreDisposedAsset)
+
 	admin.Get("/assets/:id", middleware.RequirePermission("assets.view"), handlers.GetAsset)
 	admin.Post("/assets", middleware.RequirePermission("assets.create"), handlers.CreateAsset)
 	admin.Put("/assets/:id", middleware.RequirePermission("assets.update"), handlers.UpdateAsset)

@@ -49,7 +49,13 @@ const SalesReport         = () => import('@/pages/SalesReport.vue')
 const CashierShiftReport  = () => import('@/pages/CashierShiftReport.vue')
 const ShiftReconciliation = () => import('@/pages/ShiftReconciliation.vue')
 const ProductSalesReport  = () => import('@/pages/ProductSalesReport.vue')
-const Assets              = () => import('@/pages/Assets.vue')
+const AssetDashboard      = () => import('@/pages/aset/AssetDashboard.vue')
+const AssetList           = () => import('@/pages/aset/AssetList.vue')
+const AssetAcquisitions   = () => import('@/pages/aset/AssetAcquisitions.vue')
+const AssetMaintenance    = () => import('@/pages/aset/AssetMaintenance.vue')
+const AssetTransfers      = () => import('@/pages/aset/AssetTransfers.vue')
+const AssetDepreciation   = () => import('@/pages/aset/AssetDepreciation.vue')
+const AssetDisposals      = () => import('@/pages/aset/AssetDisposals.vue')
 const Reservations        = () => import('@/pages/Reservations.vue')
 const Customers           = () => import('@/pages/Customers.vue')
 const ReservePublic       = () => import('@/pages/ReservePublic.vue')
@@ -482,12 +488,52 @@ const routes = [
         component: StockLedger,
         meta: { title: 'Buku Stok — Cloud POS', requiresAuth: true, permission: 'stockledger.view' },
       },
+      // ── Modul Aset ──
       {
-        path: 'perlengkapan',
-        name: 'Assets',
-        component: Assets,
-        meta: { title: 'Manajemen Perlengkapan — Cloud POS', requiresAuth: true, permission: 'assets.view' },
+        path: 'aset/dashboard',
+        name: 'AssetDashboard',
+        component: AssetDashboard,
+        meta: { title: 'Dashboard Aset — Cloud POS', requiresAuth: true, permission: 'assets.dashboard.view' },
       },
+      {
+        path: 'aset/daftar',
+        name: 'Assets',
+        component: AssetList,
+        meta: { title: 'Daftar Aset — Cloud POS', requiresAuth: true, permission: 'assets.view' },
+      },
+      {
+        path: 'aset/perolehan',
+        name: 'AssetAcquisitions',
+        component: AssetAcquisitions,
+        meta: { title: 'Histori Perolehan — Cloud POS', requiresAuth: true, permission: 'assets.acquisition.view' },
+      },
+      {
+        path: 'aset/perawatan',
+        name: 'AssetMaintenance',
+        component: AssetMaintenance,
+        meta: { title: 'Perawatan Aset — Cloud POS', requiresAuth: true, permission: 'assets.view' },
+      },
+      {
+        path: 'aset/mutasi',
+        name: 'AssetTransfers',
+        component: AssetTransfers,
+        meta: { title: 'Mutasi Aset — Cloud POS', requiresAuth: true, permission: 'assets.transfer.view' },
+      },
+      {
+        path: 'aset/penyusutan',
+        name: 'AssetDepreciation',
+        component: AssetDepreciation,
+        meta: { title: 'Penyusutan Aset — Cloud POS', requiresAuth: true, permission: 'assets.depreciation.view' },
+      },
+      {
+        path: 'aset/penghapusan',
+        name: 'AssetDisposals',
+        component: AssetDisposals,
+        meta: { title: 'Penghapusan Aset — Cloud POS', requiresAuth: true, permission: 'assets.disposal.view' },
+      },
+      // Tautan lama /perlengkapan tetap hidup agar bookmark & role landing page
+      // yang sudah tersimpan tidak berujung halaman kosong.
+      { path: 'perlengkapan', redirect: '/aset/daftar' },
       {
         path: 'reservations',
         name: 'Reservations',

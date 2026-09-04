@@ -801,6 +801,66 @@ func RunMigrations() error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_asset_maintenances_asset ON asset_maintenances(asset_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_asset_maintenances_date ON asset_maintenances(maintenance_date)`,
+		// ── Modul Aset: identitas, penyusutan, dan status siklus hidup ──────────
+		// useful_life_months = 0 berarti aset tidak disusutkan (mis. barang kecil).
+		// status memisahkan penghapusan akuntansi (dihapus/dijual) dari is_deleted
+		// yang dipakai untuk membatalkan salah input.
+		`ALTER TABLE assets ADD COLUMN IF NOT EXISTS serial_number VARCHAR(100) DEFAULT ''`,
+		`ALTER TABLE assets ADD COLUMN IF NOT EXISTS vendor_id CHAR(26)`,
+		`ALTER TABLE assets ADD COLUMN IF NOT EXISTS useful_life_months INT DEFAULT 0`,
+		`ALTER TABLE assets ADD COLUMN IF NOT EXISTS residual_value DECIMAL(15,2) DEFAULT 0`,
+		`ALTER TABLE assets ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'aktif'`,
+		`CREATE INDEX IF NOT EXISTS idx_assets_status ON assets(status)`,
+		// Histori perolehan — satu aset bisa bertambah unit di kemudian hari.
+		// Baris pertama di-backfill dari purchase_date/purchase_price aset lama.
+		`CREATE TABLE IF NOT EXISTS asset_acquisitions (
+			id               CHAR(26) PRIMARY KEY,
+			asset_id         CHAR(26) NOT NULL,
+			acquisition_date DATE NOT NULL DEFAULT CURRENT_DATE,
+			source           VARCHAR(30) DEFAULT 'pembelian',
+			quantity         INT DEFAULT 1,
+			unit_price       DECIMAL(15,2) DEFAULT 0,
+			total_cost       DECIMAL(15,2) DEFAULT 0,
+			vendor_id        CHAR(26),
+			vendor_name      VARCHAR(200) DEFAULT '',
+			document_no      VARCHAR(80) DEFAULT '',
+			notes            TEXT DEFAULT '',
+			created_at       TIMESTAMP DEFAULT (now() AT TIME ZONE 'UTC')
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_asset_acq_asset ON asset_acquisitions(asset_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_asset_acq_date ON asset_acquisitions(acquisition_date)`,
+		// Mutasi antar outlet — memindahkan seluruh baris aset, jejaknya disimpan.
+		`CREATE TABLE IF NOT EXISTS asset_transfers (
+			id             CHAR(26) PRIMARY KEY,
+			asset_id       CHAR(26) NOT NULL,
+			from_outlet_id CHAR(26) NOT NULL,
+			to_outlet_id   CHAR(26) NOT NULL,
+			transfer_date  DATE NOT NULL DEFAULT CURRENT_DATE,
+			quantity       INT DEFAULT 1,
+			reason         TEXT DEFAULT '',
+			performed_by   VARCHAR(150) DEFAULT '',
+			notes          TEXT DEFAULT '',
+			created_at     TIMESTAMP DEFAULT (now() AT TIME ZONE 'UTC')
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_asset_transfers_asset ON asset_transfers(asset_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_asset_transfers_date ON asset_transfers(transfer_date)`,
+		// Penghapusan aset — nilai buku saat dihapus disimpan agar laba/rugi
+		// pelepasan tetap bisa dihitung ulang walau parameter penyusutan berubah.
+		`CREATE TABLE IF NOT EXISTS asset_disposals (
+			id                     CHAR(26) PRIMARY KEY,
+			asset_id               CHAR(26) NOT NULL,
+			disposal_date          DATE NOT NULL DEFAULT CURRENT_DATE,
+			method                 VARCHAR(30) DEFAULT 'dijual',
+			quantity               INT DEFAULT 1,
+			proceeds               DECIMAL(15,2) DEFAULT 0,
+			book_value_at_disposal DECIMAL(15,2) DEFAULT 0,
+			reason                 TEXT DEFAULT '',
+			approved_by            VARCHAR(150) DEFAULT '',
+			notes                  TEXT DEFAULT '',
+			created_at             TIMESTAMP DEFAULT (now() AT TIME ZONE 'UTC')
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_asset_disposals_asset ON asset_disposals(asset_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_asset_disposals_date ON asset_disposals(disposal_date)`,
 		// Foto produk (agar calon reservasi bisa melihat menu).
 		`ALTER TABLE cloud_products ADD COLUMN IF NOT EXISTS photo_url VARCHAR(255) DEFAULT ''`,
 		// Slug outlet untuk URL reservasi publik per outlet (/r/:slug).
@@ -1227,11 +1287,11 @@ func RunMigrations() error {
 	// Migrate .manage → granular CRUD permissions (one-time, idempotent)
 	{
 		manageToCRUD := map[string][]string{
-			"outlets.manage":  {"outlets.create", "outlets.update", "outlets.delete"},
-			"products.manage": {"products.create", "products.update", "products.delete"},
+			"outlets.manage":   {"outlets.create", "outlets.update", "outlets.delete"},
+			"products.manage":  {"products.create", "products.update", "products.delete"},
 			"warehouse.manage": {"warehouse.create", "warehouse.update", "warehouse.delete"},
-			"users.manage":    {"users.create", "users.update", "users.delete"},
-			"settings.manage": {"settings.update"},
+			"users.manage":     {"users.create", "users.update", "users.delete"},
+			"settings.manage":  {"settings.update"},
 		}
 		for oldPerm, newPerms := range manageToCRUD {
 			var count int
@@ -2022,6 +2082,92 @@ func RunMigrations() error {
 			ON CONFLICT DO NOTHING`)
 		DB.Exec(`INSERT INTO app_settings (key, value) VALUES ('mig_customers_perm', 'done') ON CONFLICT (key) DO NOTHING`)
 		log.Printf("Permission customers.view di-seed ke role pemegang reservations.view")
+	}
+
+	// ── Backfill histori perolehan aset lama (one-shot, marker) ──────────────
+	// Aset yang sudah ada sebelum modul ini hanya punya purchase_date/price di
+	// baris aset. Supaya halaman Perolehan dan perhitungan penyusutan punya
+	// titik awal, dibuatkan satu baris perolehan dari data tersebut.
+	var acqBackfilled int
+	DB.QueryRow("SELECT COUNT(*) FROM app_settings WHERE key = 'mig_asset_acq_backfill'").Scan(&acqBackfilled)
+	if acqBackfilled == 0 {
+		res, err := DB.Exec(`
+			INSERT INTO asset_acquisitions (id, asset_id, acquisition_date, source, quantity,
+				unit_price, total_cost, vendor_name, document_no, notes, created_at)
+			SELECT
+				UPPER(SUBSTRING(REPLACE(gen_random_uuid()::text, '-', '') FOR 26)),
+				a.id,
+				COALESCE(a.purchase_date, a.created_at::date),
+				'pembelian',
+				GREATEST(a.quantity, 1),
+				a.purchase_price,
+				a.purchase_price * GREATEST(a.quantity, 1),
+				'', '', 'Perolehan awal (dibuat otomatis dari data aset lama)',
+				a.created_at
+			FROM assets a
+			WHERE NOT EXISTS (SELECT 1 FROM asset_acquisitions ac WHERE ac.asset_id = a.id)`)
+		if err != nil {
+			log.Printf("Backfill perolehan aset dilewati: %v", err)
+		} else {
+			n, _ := res.RowsAffected()
+			DB.Exec(`INSERT INTO app_settings (key, value) VALUES ('mig_asset_acq_backfill', 'done') ON CONFLICT (key) DO NOTHING`)
+			log.Printf("Backfill histori perolehan aset: %d baris dibuat", n)
+		}
+	}
+
+	// ── Seed izin modul Aset (one-shot, marker) — lihat catatan blok PPIC ────
+	// Role yang saat ini boleh melihat Perlengkapan otomatis mendapat izin
+	// sub-modul Aset SEKALI saat deploy; pencabutan admin sesudahnya tidak
+	// ditimpa saat boot.
+	var assetPermSeeded int
+	DB.QueryRow("SELECT COUNT(*) FROM app_settings WHERE key = 'mig_assets_module'").Scan(&assetPermSeeded)
+	if assetPermSeeded == 0 {
+		for _, p := range []string{
+			"assets.dashboard.view",
+			"assets.acquisition.view", "assets.acquisition.manage",
+			"assets.transfer.view", "assets.transfer.manage",
+			"assets.depreciation.view",
+			"assets.disposal.view", "assets.disposal.manage",
+		} {
+			DB.Exec(`INSERT INTO role_permissions (role, permission)
+				SELECT DISTINCT role, $1 FROM role_permissions WHERE permission = 'assets.view'
+				ON CONFLICT DO NOTHING`, p)
+		}
+		DB.Exec(`INSERT INTO app_settings (key, value) VALUES ('mig_assets_module', 'done') ON CONFLICT (key) DO NOTHING`)
+		log.Printf("Permission modul Aset di-seed ke role pemegang assets.view")
+	}
+
+	// ── Sebar izin Aset ke role operasional & pemantau (one-shot, marker) ────
+	// Blok sebelumnya hanya menjangkau role yang sudah memegang assets.view,
+	// sehingga role operasional (mis. manager) tidak kebagian modul baru ini.
+	// Penargetan memakai izin yang sudah dimiliki — bukan nama role — supaya
+	// tidak bergantung pada penamaan role di masing-masing deployment.
+	//
+	// Operasional: boleh mengelola aset, perolehan, perawatan, dan mutasi.
+	// SENGAJA TIDAK termasuk assets.delete dan assets.disposal.* — pelepasan
+	// aset berdampak akuntansi (laba/rugi pelepasan) dan ditahan di admin.
+	var assetRolesSeeded int
+	DB.QueryRow("SELECT COUNT(*) FROM app_settings WHERE key = 'mig_assets_roles'").Scan(&assetRolesSeeded)
+	if assetRolesSeeded == 0 {
+		for _, p := range []string{
+			"assets.dashboard.view",
+			"assets.view", "assets.create", "assets.update",
+			"assets.acquisition.view", "assets.acquisition.manage",
+			"assets.transfer.view", "assets.transfer.manage",
+			"assets.depreciation.view",
+		} {
+			DB.Exec(`INSERT INTO role_permissions (role, permission)
+				SELECT DISTINCT role, $1 FROM role_permissions WHERE permission = 'ppic.dashboard.view'
+				ON CONFLICT DO NOTHING`, p)
+		}
+		// Pemantau (role baca-saja laporan keuangan): cukup melihat nilai aset.
+		for _, p := range []string{"assets.view", "assets.dashboard.view", "assets.depreciation.view"} {
+			DB.Exec(`INSERT INTO role_permissions (role, permission)
+				SELECT DISTINCT role, $1 FROM role_permissions WHERE permission = 'reports.balance.view'
+				ON CONFLICT DO NOTHING`, p)
+		}
+		DB.Exec(`INSERT INTO app_settings (key, value) VALUES ('mig_assets_roles', 'done') ON CONFLICT (key) DO NOTHING`)
+		log.Printf("Permission Aset disebar: operasional → pemegang ppic.dashboard.view, pemantau → pemegang reports.balance.view")
 	}
 
 	return nil

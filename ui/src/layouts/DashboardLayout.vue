@@ -347,7 +347,6 @@ const NAV_ITEMS_DATA = [
       { to: '/outlets',    label: 'Outlet',     permission: 'outlets.view' },
       { to: '/work-units', label: 'Unit Kerja', permission: 'workunits.view' },
       { to: '/warehouses', label: 'Gudang',     permission: 'warehouses.view' },
-      { to: '/perlengkapan', label: 'Perlengkapan', permission: 'assets.view' },
       { to: '/roles',      label: 'Role',       permission: 'roles.view' },
       { to: '/app-pos',    label: 'App POS',     permission: 'appfiles.view' },
     ],
@@ -405,6 +404,21 @@ const NAV_ITEMS_DATA = [
       { to: '/purchase-goods', label: 'Barang', permission: 'procurement.requests.view' },
       { to: '/purchase-services', label: 'Jasa', permission: 'procurement.requests.view' },
       { to: '/vendors', label: 'Vendor', permission: 'vendors.view' },
+    ],
+  },
+  {
+    label: 'Aset',
+    icon: `<svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+    </svg>`,
+    children: [
+      { to: '/aset/dashboard',   label: 'Dashboard',        permission: 'assets.dashboard.view' },
+      { to: '/aset/daftar',      label: 'Daftar Aset',      permission: 'assets.view' },
+      { to: '/aset/perolehan',   label: 'Histori Perolehan', permission: 'assets.acquisition.view' },
+      { to: '/aset/perawatan',   label: 'Perawatan',        permission: 'assets.view' },
+      { to: '/aset/mutasi',      label: 'Mutasi Antar Outlet', permission: 'assets.transfer.view' },
+      { to: '/aset/penyusutan',  label: 'Penyusutan',       permission: 'assets.depreciation.view' },
+      { to: '/aset/penghapusan', label: 'Penghapusan',      permission: 'assets.disposal.view' },
     ],
   },
   {

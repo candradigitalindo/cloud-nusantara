@@ -60,6 +60,7 @@ Backend berjalan di port default **3000**. Frontend (Vue 3) di-serve langsung ol
 | Bank Accounts | Rekening bank untuk pembayaran procurement |
 | Reports | Sales, product sales, unpaid orders, tax, cash flow, balance, profit-loss, general ledger |
 | Warehouse | Stock items, gudang (central/outlet), stock ledger, mutasi, transfer, waste, resep |
+| Aset | Modul tersendiri (sidebar "Aset"): dashboard, register aset, histori perolehan, perawatan + pengingat jatuh tempo, mutasi antar outlet, penyusutan garis lurus & nilai buku, penghapusan (laba/rugi pelepasan) |
 | Settings | Company identity, timezone, tax (PB1) |
 | Upload | File upload (foto bukti pembayaran, logo, dll.) |
 
@@ -76,7 +77,7 @@ Backend berjalan di port default **3000**. Frontend (Vue 3) di-serve langsung ol
 
 ## Database (tabel utama)
 
-`outlets`, `cloud_orders`, `cloud_transactions`, `cloud_products`, `cloud_categories`, `cloud_analytics`, `sync_logs`, `sync_conflicts`, `cloud_cashier_shifts`, `cloud_cash_movements`, `cloud_admins`, `cloud_printers`, `purchase_requests`, `payment_histories`, `work_units`, `vendors`, `bank_accounts`, `stock_items`, `stock_item_categories`, `warehouses`, `stock_ledger`, `stock_batches`, `stock_movements`, `stock_transfers`, `stock_transfer_items`, `stock_wastes`, `product_recipes`, `recipe_masters`, `recipe_items`, `recipe_outlet_access`, `stock_item_recipes`, `roles`, `role_permissions`, `role_work_unit_scope`, `app_settings`
+`outlets`, `cloud_orders`, `cloud_transactions`, `cloud_products`, `cloud_categories`, `cloud_analytics`, `sync_logs`, `sync_conflicts`, `cloud_cashier_shifts`, `cloud_cash_movements`, `cloud_admins`, `cloud_printers`, `assets`, `asset_maintenances`, `asset_acquisitions`, `asset_transfers`, `asset_disposals`, `purchase_requests`, `payment_histories`, `work_units`, `vendors`, `bank_accounts`, `stock_items`, `stock_item_categories`, `warehouses`, `stock_ledger`, `stock_batches`, `stock_movements`, `stock_transfers`, `stock_transfer_items`, `stock_wastes`, `product_recipes`, `recipe_masters`, `recipe_items`, `recipe_outlet_access`, `stock_item_recipes`, `roles`, `role_permissions`, `role_work_unit_scope`, `app_settings`
 
 ---
 
