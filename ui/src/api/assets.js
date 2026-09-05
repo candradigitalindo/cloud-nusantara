@@ -9,6 +9,7 @@ export const assetsApi = {
   create:            (data)        => apiClient.post('/admin/assets', data),
   update:            (id, data)    => apiClient.put(`/admin/assets/${id}`, data),
   remove:            (id)          => apiClient.delete(`/admin/assets/${id}`),
+  restore:           (id)          => apiClient.post(`/admin/assets/${id}/restore`),
   maintenances:      (id)          => apiClient.get(`/admin/assets/${id}/maintenances`),
   addMaintenance:    (id, data)    => apiClient.post(`/admin/assets/${id}/maintenances`, data),
   removeMaintenance: (id, mid)     => apiClient.delete(`/admin/assets/${id}/maintenances/${mid}`),

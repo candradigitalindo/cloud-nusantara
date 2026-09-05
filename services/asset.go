@@ -57,24 +57,72 @@ func assetDueCond(due string) string {
 // diakumulasi per bulan penuh sejak perolehan pertama dan dibatasi agar nilai
 // buku tidak pernah turun di bawah nilai residu.
 
-const assetCostExpr = `COALESCE(acq.cost, a.purchase_price * GREATEST(a.quantity, 1))`
+// Cadangan untuk aset yang belum punya baris perolehan sama sekali (mis. data
+// lama sebelum backfill). Perhitungannya satu kolam memakai harga beli aset.
+const assetFallbackCostExpr = `(a.purchase_price * GREATEST(a.quantity, 1))`
 
+const assetFallbackDeprecBaseExpr = `GREATEST(` + assetFallbackCostExpr + ` - COALESCE(a.residual_value, 0), 0)`
+
+const assetFallbackMonthlyExpr = `CASE WHEN COALESCE(a.useful_life_months, 0) > 0
+			THEN ` + assetFallbackDeprecBaseExpr + ` / a.useful_life_months ELSE 0 END`
+
+// Tanggal mulai untuk tampilan "umur" — perolehan paling awal.
 const assetFirstDateExpr = `COALESCE(acq.first_date, a.purchase_date, a.created_at::date)`
 
 const assetAgeExpr = `GREATEST((EXTRACT(YEAR FROM AGE(CURRENT_DATE, ` + assetFirstDateExpr + `)) * 12 +
 			EXTRACT(MONTH FROM AGE(CURRENT_DATE, ` + assetFirstDateExpr + `)))::int, 0)`
 
-const assetDepreciableExpr = `GREATEST(` + assetCostExpr + ` - COALESCE(a.residual_value, 0), 0)`
+const assetFallbackAccumExpr = `LEAST((` + assetFallbackMonthlyExpr + `) * ` + assetAgeExpr + `, ` + assetFallbackDeprecBaseExpr + `)`
 
-const assetMonthlyDeprecExpr = `CASE WHEN COALESCE(a.useful_life_months, 0) > 0
-			THEN ` + assetDepreciableExpr + ` / a.useful_life_months ELSE 0 END`
+// Nilai & penyusutan diambil dari agregat per-batch di klausa LATERAL
+// (assetAcqLateral); cadangan dipakai hanya bila aset tak punya perolehan.
+const assetCostExpr = `COALESCE(acq.cost, ` + assetFallbackCostExpr + `)`
 
-const assetAccumDeprecExpr = `LEAST((` + assetMonthlyDeprecExpr + `) * ` + assetAgeExpr + `, ` + assetDepreciableExpr + `)`
+const assetAccumDeprecExpr = `COALESCE(acq.accum, ` + assetFallbackAccumExpr + `)`
+
+const assetMonthlyDeprecExpr = `COALESCE(acq.monthly, ` + assetFallbackMonthlyExpr + `)`
 
 const assetBookValueExpr = assetCostExpr + ` - (` + assetAccumDeprecExpr + `)`
 
 // assetFromClause — sumber baris aset beserta seluruh agregat pendukungnya.
 // Dipakai bersama oleh daftar dan detail agar keduanya tak pernah beda definisi.
+// assetAcqLateral menghitung nilai perolehan DAN penyusutan PER BATCH perolehan,
+// bukan sebagai satu kolam dengan satu tanggal mulai.
+//
+// Ini penting untuk aset yang jumlahnya bertambah bertahap (mis. sendok/kursi
+// yang dibeli beberapa kali): unit yang baru dibeli bulan ini tidak boleh ikut
+// disusutkan seolah dimiliki sejak pembelian pertama. Tiap batch memakai
+// tanggal perolehannya sendiri, dan nilai residu aset dibagi proporsional
+// menurut porsi nilai tiap batch.
+//
+// SUM(...) sengaja TIDAK di-COALESCE ke 0 di dalam sini — aset tanpa baris
+// perolehan harus menghasilkan NULL supaya jatuh ke rumus cadangan di luar.
+const assetAcqLateral = `
+		LEFT JOIN LATERAL (
+			SELECT
+				MAX(s.total_all)                                        AS cost,
+				MIN(s.acquisition_date)                                 AS first_date,
+				SUM(LEAST(s.monthly * s.age_m, s.deprec_base))          AS accum,
+				SUM(CASE WHEN s.age_m < s.life THEN s.monthly ELSE 0 END) AS monthly
+			FROM (
+				SELECT
+					b.acquisition_date, b.age_m, b.life, b.total_all, b.deprec_base,
+					CASE WHEN b.life > 0 THEN b.deprec_base / b.life ELSE 0 END AS monthly
+				FROM (
+					SELECT
+						ac.acquisition_date,
+						SUM(ac.total_cost) OVER ()          AS total_all,
+						COALESCE(a.useful_life_months, 0)   AS life,
+						GREATEST((EXTRACT(YEAR FROM AGE(CURRENT_DATE, ac.acquisition_date)) * 12 +
+							EXTRACT(MONTH FROM AGE(CURRENT_DATE, ac.acquisition_date)))::int, 0) AS age_m,
+						GREATEST(ac.total_cost - COALESCE(a.residual_value, 0) *
+							(ac.total_cost / NULLIF(SUM(ac.total_cost) OVER (), 0)), 0) AS deprec_base
+					FROM asset_acquisitions ac
+					WHERE ac.asset_id = a.id
+				) b
+			) s
+		) acq ON true`
+
 const assetFromClause = `
 		FROM assets a
 		LEFT JOIN outlets o ON o.id = a.outlet_id
@@ -82,11 +130,7 @@ const assetFromClause = `
 		LEFT JOIN (
 			SELECT asset_id, COUNT(*) AS cnt, TO_CHAR(MAX(maintenance_date), 'YYYY-MM-DD') AS last_date
 			FROM asset_maintenances GROUP BY asset_id
-		) m ON m.asset_id = a.id
-		LEFT JOIN (
-			SELECT asset_id, SUM(total_cost) AS cost, MIN(acquisition_date) AS first_date
-			FROM asset_acquisitions GROUP BY asset_id
-		) acq ON acq.asset_id = a.id` + assetNextDueJoin
+		) m ON m.asset_id = a.id` + assetAcqLateral + assetNextDueJoin
 
 // assetSelectCols — urutannya WAJIB sejalan dengan scanAsset.
 var assetSelectCols = `
@@ -160,21 +204,32 @@ func nullableID(s string) interface{} {
 // ListAssets returns assets (optionally filtered by outlet/search/condition/due)
 // with a maintenance count, last-maintenance date, and next-due schedule per asset.
 func ListAssets(outletID, search, condition, due, status string, outletScope []string) ([]models.Asset, error) {
-	conds := []string{"a.is_deleted = false"}
+	conds := []string{}
 	args := []interface{}{}
 	idx := 1
 
-	// Aset yang sudah dihapus (dijual/dimusnahkan) tidak muncul di daftar aktif;
-	// riwayatnya tetap dapat dibuka lewat halaman Penghapusan.
-	switch status {
-	case "":
-		conds = append(conds, "COALESCE(a.status, 'aktif') <> 'dihapus'")
-	case "all":
-		// tanpa filter status
-	default:
-		conds = append(conds, fmt.Sprintf("COALESCE(a.status, 'aktif') = $%d", idx))
-		args = append(args, status)
-		idx++
+	// "terhapus" adalah SUMBU BERBEDA dari status dijual/dimusnahkan: is_deleted
+	// menandai baris yang dibatalkan (salah input) lewat tombol Hapus di Daftar
+	// Aset, dipulihkan lewat RestoreAsset. status='dihapus' menandai pelepasan
+	// akuntansi (dijual/dimusnahkan/dst.) lewat halaman Penghapusan, dipulihkan
+	// lewat RestoreDisposedAsset. Keduanya sengaja tidak dicampur dalam satu
+	// filter supaya masing-masing punya jalur pulih sendiri yang jelas.
+	if status == "terhapus" {
+		conds = append(conds, "a.is_deleted = true")
+	} else {
+		conds = append(conds, "a.is_deleted = false")
+		// Aset yang sudah dihapus (dijual/dimusnahkan) tidak muncul di daftar aktif;
+		// riwayatnya tetap dapat dibuka lewat halaman Penghapusan.
+		switch status {
+		case "":
+			conds = append(conds, "COALESCE(a.status, 'aktif') <> 'dihapus'")
+		case "all":
+			// tanpa filter status
+		default:
+			conds = append(conds, fmt.Sprintf("COALESCE(a.status, 'aktif') = $%d", idx))
+			args = append(args, status)
+			idx++
+		}
 	}
 
 	if outletID != "" {
@@ -325,6 +380,23 @@ func DeleteAsset(id string, outletScope []string) error {
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return fmt.Errorf("aset tidak ditemukan")
+	}
+	return nil
+}
+
+// RestoreAsset membatalkan penghapusan (is_deleted) — kebalikan dari
+// DeleteAsset. Terpisah dari RestoreDisposedAsset karena keduanya menandai
+// sumbu yang berbeda (lihat catatan di ListAssets).
+func RestoreAsset(id string, outletScope []string) error {
+	scopeCond, scopeArgs := assetScopeCond("", outletScope, 2)
+	args := append([]interface{}{id}, scopeArgs...)
+	res, err := database.DB.Exec(fmt.Sprintf(
+		`UPDATE assets SET is_deleted=false, updated_at=NOW() WHERE id=$1 AND is_deleted=true%s`, scopeCond), args...)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("aset tidak ditemukan atau belum dihapus")
 	}
 	return nil
 }

@@ -296,6 +296,7 @@ func Setup(app *fiber.App, cfg *config.Config) {
 	admin.Post("/assets", middleware.RequirePermission("assets.create"), handlers.CreateAsset)
 	admin.Put("/assets/:id", middleware.RequirePermission("assets.update"), handlers.UpdateAsset)
 	admin.Delete("/assets/:id", middleware.RequirePermission("assets.delete"), handlers.DeleteAsset)
+	admin.Post("/assets/:id/restore", middleware.RequirePermission("assets.delete"), handlers.RestoreAsset)
 	admin.Get("/assets/:id/maintenances", middleware.RequirePermission("assets.view"), handlers.ListAssetMaintenances)
 	admin.Post("/assets/:id/maintenances", middleware.RequirePermission("assets.update"), handlers.AddAssetMaintenance)
 	admin.Delete("/assets/:id/maintenances/:mid", middleware.RequirePermission("assets.update"), handlers.DeleteAssetMaintenance)

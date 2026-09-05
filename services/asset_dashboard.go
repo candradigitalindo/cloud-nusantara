@@ -11,6 +11,13 @@ import (
 // Dashboard modul Aset: nilai (perolehan/penyusutan/buku), kesehatan perawatan,
 // sebaran per kondisi/outlet/kategori, tren 12 bulan, dan pelepasan tahun ini.
 
+// assetMonthSeries — 12 bulan berurutan sampai bulan berjalan, sebagai tulang
+// punggung grafik tren agar panjangnya selalu tetap.
+const assetMonthSeries = `generate_series(
+			DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '11 months',
+			DATE_TRUNC('month', CURRENT_DATE),
+			INTERVAL '1 month') AS s(bulan)`
+
 // assetFilter menyusun kondisi WHERE dasar untuk aset aktif dalam cakupan.
 // Semua query dashboard memakainya agar satu angka tidak pernah beda basis.
 func assetFilter(outletID string, outletScope []string, startIdx int) (string, []interface{}, int) {
@@ -49,14 +56,15 @@ func AssetDashboardStats(outletID string, outletScope []string) (*models.AssetDa
 		       COUNT(CASE WHEN nd.next_due_date IS NULL THEN 1 END)::int,
 		       COUNT(CASE WHEN a.condition <> 'baik' THEN 1 END)::int,
 		       COUNT(CASE WHEN COALESCE(a.useful_life_months,0) > 0
-		                   AND GREATEST(COALESCE(a.useful_life_months,0) - %s, 0) <= 3 THEN 1 END)::int
+		                   AND GREATEST(COALESCE(a.useful_life_months,0) - %s, 0) <= 3 THEN 1 END)::int,
+		       COUNT(CASE WHEN COALESCE(a.useful_life_months,0) > 0 THEN 1 END)::int
 		%s
 		WHERE %s`,
 		assetCostExpr, assetAccumDeprecExpr, assetBookValueExpr, assetMonthlyDeprecExpr,
 		assetDueSoonDays, assetAgeExpr, assetFromClause, where), args...).
 		Scan(&d.TotalAssets, &d.TotalQuantity, &d.AcquisitionCost, &d.AccumulatedDeprec,
 			&d.BookValue, &d.MonthlyDeprec, &d.Overdue, &d.DueSoon, &d.Unscheduled,
-			&d.NeedsAttention, &d.EndingSoonCount)
+			&d.NeedsAttention, &d.EndingSoonCount, &d.DepreciatingCount)
 	if err != nil {
 		return nil, err
 	}
@@ -103,22 +111,36 @@ func AssetDashboardStats(outletID string, outletScope []string) (*models.AssetDa
 	}
 
 	// ── Tren 12 bulan: perolehan & biaya perawatan ──
+	// Deret bulan digenerate penuh lalu di-LEFT JOIN, supaya bulan tanpa data
+	// tetap muncul sebagai nol. Tanpa ini grafik "12 bulan terakhir" hanya
+	// menampilkan bulan yang kebetulan berisi — terbaca sebagai titik acak,
+	// bukan tren, dan jarak antar bulan jadi menyesatkan.
 	if d.AcquisitionTrend, err = assetMonthlySeries(fmt.Sprintf(`
-		SELECT TO_CHAR(ac.acquisition_date, 'YYYY-MM'), COUNT(*)::int, COALESCE(SUM(ac.total_cost),0)
-		FROM asset_acquisitions ac
-		JOIN assets a ON a.id = ac.asset_id
-		WHERE ac.acquisition_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '11 months'
-		  AND %s
-		GROUP BY 1 ORDER BY 1`, where), args); err != nil {
+		SELECT TO_CHAR(s.bulan, 'YYYY-MM'), COALESCE(t.cnt, 0), COALESCE(t.val, 0)
+		FROM %s
+		LEFT JOIN (
+			SELECT DATE_TRUNC('month', ac.acquisition_date) AS bulan,
+			       COUNT(*)::int AS cnt, SUM(ac.total_cost) AS val
+			FROM asset_acquisitions ac
+			JOIN assets a ON a.id = ac.asset_id
+			WHERE %s
+			GROUP BY 1
+		) t ON t.bulan = s.bulan
+		ORDER BY s.bulan`, assetMonthSeries, where), args); err != nil {
 		return nil, err
 	}
 	if d.MaintenanceTrend, err = assetMonthlySeries(fmt.Sprintf(`
-		SELECT TO_CHAR(mm.maintenance_date, 'YYYY-MM'), COUNT(*)::int, COALESCE(SUM(mm.cost),0)
-		FROM asset_maintenances mm
-		JOIN assets a ON a.id = mm.asset_id
-		WHERE mm.maintenance_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '11 months'
-		  AND %s
-		GROUP BY 1 ORDER BY 1`, where), args); err != nil {
+		SELECT TO_CHAR(s.bulan, 'YYYY-MM'), COALESCE(t.cnt, 0), COALESCE(t.val, 0)
+		FROM %s
+		LEFT JOIN (
+			SELECT DATE_TRUNC('month', mm.maintenance_date) AS bulan,
+			       COUNT(*)::int AS cnt, SUM(mm.cost) AS val
+			FROM asset_maintenances mm
+			JOIN assets a ON a.id = mm.asset_id
+			WHERE %s
+			GROUP BY 1
+		) t ON t.bulan = s.bulan
+		ORDER BY s.bulan`, assetMonthSeries, where), args); err != nil {
 		return nil, err
 	}
 

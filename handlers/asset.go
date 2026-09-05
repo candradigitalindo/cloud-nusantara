@@ -74,6 +74,13 @@ func DeleteAsset(c *fiber.Ctx) error {
 	return c.JSON(models.APIResponse{Success: true})
 }
 
+func RestoreAsset(c *fiber.Ctx) error {
+	if err := services.RestoreAsset(c.Params("id"), getOutletScope(c)); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(models.APIResponse{Success: false, Error: err.Error()})
+	}
+	return c.JSON(models.APIResponse{Success: true})
+}
+
 func ListAssetMaintenances(c *fiber.Ctx) error {
 	// Scope guard: ensure the asset is visible before exposing its history.
 	if _, err := services.GetAsset(c.Params("id"), getOutletScope(c)); err != nil {

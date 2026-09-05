@@ -160,6 +160,9 @@ type AssetDashboard struct {
 	AccumulatedDeprec float64 `json:"accumulated_deprec"`
 	BookValue         float64 `json:"book_value"`
 	MonthlyDeprec     float64 `json:"monthly_deprec"`
+	// Berapa aset yang benar-benar punya umur ekonomis. Tanpa angka ini,
+	// persentase tersusut terbaca seolah berlaku untuk seluruh portofolio.
+	DepreciatingCount int `json:"depreciating_count"`
 
 	// Perawatan
 	Overdue         int     `json:"overdue"`
